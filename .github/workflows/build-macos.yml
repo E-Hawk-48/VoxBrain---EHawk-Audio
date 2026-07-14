@@ -1,0 +1,48 @@
+name: Build macOS installer
+
+# Produces a macOS .pkg on a cloud Mac — so you can ship a Mac build WITHOUT
+# owning a Mac. Trigger it manually from the Actions tab (or push a v* tag),
+# then download the .pkg from the run's Artifacts and send it to your friend.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 1.2.0)"
+        required: true
+        default: "1.0.0"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-macos:
+    runs-on: macos-14        # Apple Silicon runner (builds universal)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install CMake
+        run: brew install cmake || true
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (universal)
+        run: bash Scripts/build_macos.sh
+
+      - name: Package .pkg
+        run: bash Scripts/package_macos.sh "${{ steps.ver.outputs.value }}"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: VocalForge-macOS-${{ steps.ver.outputs.value }}
+          path: build-mac/VocalForge-*.pkg
+          if-no-files-found: error

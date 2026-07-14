@@ -1,0 +1,8 @@
+# Keep shell scripts as LF so they run on macOS / the Linux CI runner,
+# even though the repo is edited on Windows.
+*.sh    text eol=lf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Treat the model + any binaries as binary (no line-ending munging).
+*.onnx  binary

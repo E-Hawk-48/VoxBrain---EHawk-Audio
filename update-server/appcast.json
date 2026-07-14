@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "notes": "• First public release of VocalForge.\n• One-button AI auto-mix, real-time pitch correction, neural pitch analysis.\n• 8 saturation models and an FDN reverb with 7 algorithms.",
+  "notesUrl": "https://YOUR-DOMAIN.example/vocalforge/changelog.html",
+  "windows": {
+    "url": "https://YOUR-DOMAIN.example/vocalforge/VocalForge-Setup-1.0.0.exe",
+    "sha256": "PUT_THE_INSTALLER_SHA256_HERE"
+  },
+  "macos": {
+    "url": "https://YOUR-DOMAIN.example/vocalforge/VocalForge-1.0.0.pkg",
+    "sha256": "PUT_THE_PKG_SHA256_HERE"
+  }
+}
