@@ -55,7 +55,9 @@ jobs:
       - name: Configure + build (Release)
         shell: pwsh
         run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64
+          # Let CMake pick whatever Visual Studio the runner has (don't hardcode
+          # a version); -A x64 keeps it a 64-bit build.
+          cmake -B build -A x64
           cmake --build build --config Release --parallel
 
       - name: Install Inno Setup
