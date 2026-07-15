@@ -149,10 +149,16 @@ verified feature per session, same as #1.
   (not ChatEngine directly) so undo is captured — keep that path.
 - `Update/UpdateChecker.*` (#12) — cross-platform (Win+mac) auto-update client,
   a `juce::Thread`. On load (throttled ≤ once/4h via `update.check` stamp file)
-  it fetches `VOCALFORGE_UPDATE_URL` (an appcast.json) via `juce::URL`
-  (WinINet/NSURL — no curl), semver-compares to `VOCALFORGE_VERSION`, and
-  silently downloads the platform installer to `<appdata>/VocalForge/Updates`,
-  verifying SHA-256 (juce_cryptography). Results marshaled to the message thread
+  it fetches `VOCALFORGE_UPDATE_URL` via `juce::URL` (WinINet/NSURL — no curl;
+  sends a `User-Agent` header, required by GitHub), semver-compares to
+  `VOCALFORGE_VERSION`, and silently downloads the platform installer to
+  `<appdata>/VocalForge/Updates`, verifying SHA-256 (juce_cryptography) when
+  provided. **Auto-detects two manifest formats**: GitHub Releases API
+  (`hasProperty("tag_name")` → tag_name/body/html_url + picks the `.exe`/`.pkg`
+  from `assets[]`) or a self-hosted appcast.json (version/notes/windows|macos).
+  Current URL points at the repo's `releases/latest` (verified: real GitHub JSON
+  parses to the correct per-OS asset). Publishing = push a `v*` tag →
+  `.github/workflows/release.yml` builds both installers and cuts the Release. Results marshaled to the message thread
   via `onStateChanged`; alive-guard (shared_ptr<bool>) for async safety. Never
   self-replaces (a loaded VST3 can't). `UI/UpdateBanner.*` shows the state and
   an Install button that launches the downloaded installer (`File::startAsProcess`)

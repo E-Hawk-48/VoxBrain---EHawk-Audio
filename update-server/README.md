@@ -1,66 +1,62 @@
-# VocalForge update server
+# VocalForge updates — via GitHub Releases
 
-This folder is what you publish to **your website** so the plugin can find updates.
+VocalForge auto-updates by reading the **latest GitHub Release** of your repo.
+No web server or `appcast.json` to maintain — you just publish a Release with the
+installers attached and installed copies pick it up.
 
-## How it works
+The plugin reads (baked into the build, in `CMakeLists.txt`):
 
-Every time VocalForge loads (at most once every 4 hours), it quietly fetches
-`appcast.json` from the URL baked into the build (`VOCALFORGE_UPDATE_URL` in
-`CMakeLists.txt`). If the `version` in the manifest is newer than the running
-build, it **silently downloads** the correct installer for the user's OS,
-verifies its SHA-256, and shows an "Update ready" banner in the plugin. The user
-clicks **Install**, which launches the installer; they close their DAW to finish.
-
-A loaded plugin can never replace itself, so the installer does the actual
-file replacement — this is the same model Sparkle/WinSparkle use.
-
-## One-time setup
-
-1. Pick a URL on your site, e.g. `https://ehawkaudio.com/vocalforge/appcast.json`.
-2. Put that exact URL in `CMakeLists.txt` → `VOCALFORGE_UPDATE_URL`, then rebuild.
-   (Until you do this, the updater is a no-op — it never phones home.)
-3. Make sure the folder is served over **HTTPS** (required).
-
-## Publishing an update
-
-1. Bump `project(VocalForge VERSION x.y.z …)` in `CMakeLists.txt`.
-2. Build: `Scripts\build_windows.bat`.
-3. Make the Windows installer with Inno Setup: compile `installer\vocalforge.iss`
-   (set the version), producing `VocalForge-Setup-x.y.z.exe`.
-4. (Optional) Build the macOS `.pkg` — see `Scripts/package_macos.sh` or the
-   GitHub Actions workflow `.github/workflows/build-macos.yml` (builds on a cloud
-   Mac, so you don't need one).
-5. Generate the manifest + hashes:
-   ```powershell
-   Scripts\publish_update.ps1 -Version 1.2.0 `
-     -WinInstaller path\to\VocalForge-Setup-1.2.0.exe `
-     -MacInstaller path\to\VocalForge-1.2.0.pkg `
-     -BaseUrl "https://ehawkaudio.com/vocalforge" `
-     -Notes "• Added chorus`n• Fixed de-esser" `
-     -NotesUrl "https://ehawkaudio.com/vocalforge/changelog.html"
-   ```
-6. Upload to `https://ehawkaudio.com/vocalforge/`:
-   - `appcast.json` (overwrite the old one)
-   - `VocalForge-Setup-1.2.0.exe`
-   - `VocalForge-1.2.0.pkg` (if you made one)
-
-That's it — installed copies will notice within a few hours (or on next DAW launch).
-
-## Manifest format (`appcast.json`)
-
-```json
-{
-  "version": "1.2.0",
-  "notes": "• line one\n• line two",
-  "notesUrl": "https://.../changelog.html",
-  "windows": { "url": "https://.../VocalForge-Setup-1.2.0.exe", "sha256": "…" },
-  "macos":   { "url": "https://.../VocalForge-1.2.0.pkg",       "sha256": "…" }
-}
+```
+VOCALFORGE_UPDATE_URL = https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest
 ```
 
-Notes:
-- Only `version` + one platform block are strictly required.
-- Lowering `version` never downgrades users (the plugin only acts when the
-  manifest version is strictly newer).
-- The `sha256` is optional but recommended — the plugin refuses a download whose
-  hash doesn't match.
+On load (≤ once every 4 h) it fetches that, compares the release's `tag_name`
+(e.g. `v1.2.0`) to the running build's version, and if newer, silently downloads
+the matching asset — the `.exe` on Windows, the `.pkg` on macOS — then shows the
+"ready to install" banner. Requires the repo/Releases to be **public** (yours is).
+
+## How to publish an update (fully automated)
+
+1. Bump the version in `CMakeLists.txt`:
+   `project(VocalForge VERSION 1.2.0 …)`
+2. Commit + push that.
+3. Tag it and push the tag:
+   ```
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+4. That fires `.github/workflows/release.yml`, which on cloud runners builds the
+   macOS `.pkg` **and** the Windows `.exe`, then creates the GitHub Release
+   `v1.2.0` with both attached and auto-generated notes.
+5. (Optional) Edit the release on GitHub to write nicer notes — whatever you put
+   in the release body shows up in the plugin's "Release notes".
+
+Done. Everyone running an older build sees the update within a few hours / on
+next DAW launch.
+
+### If the Windows build job ever fails
+
+The macOS job and Windows job are independent, so a Windows failure still
+publishes the release with the `.pkg`. To add the Windows installer by hand:
+build locally (`Scripts\build_windows.bat`, then compile `installer\vocalforge.iss`
+with Inno Setup) and drag the resulting `VocalForge-Setup-1.2.0.exe` onto the
+release page. I can also fix the CI job — send me the failing log.
+
+## Important notes
+
+- **The tag version must be higher than the version people already have**, or the
+  updater (correctly) does nothing. Always bump `project(... VERSION …)` to match
+  the tag.
+- The very first GitHub-aware build has to be distributed once the normal way
+  (the older builds you already shared point at a placeholder URL and never check).
+  From then on, updates flow automatically.
+- Keep the repo (and its Releases) **public** for this to work. If you make the
+  source private, tell me — we'll point the updater at a separate public
+  "releases" repo so your source stays private.
+
+## Self-hosted fallback (not needed for GitHub)
+
+`appcast.json` + `Scripts/publish_update.ps1` in this folder are the alternative
+for hosting updates on your own website instead of GitHub. The plugin
+auto-detects the format, so you can switch later by just changing
+`VOCALFORGE_UPDATE_URL` back to your `appcast.json` URL.

@@ -4,6 +4,9 @@ name: Build macOS installer
 # owning a Mac. Trigger it manually from the Actions tab (or push a v* tag),
 # then download the .pkg from the run's Artifacts and send it to your friend.
 
+#  Manual-only: builds a macOS .pkg artifact WITHOUT publishing a release
+#  (useful for test builds). To actually ship an update, push a v* tag — that
+#  triggers release.yml, which builds both installers and publishes a Release.
 on:
   workflow_dispatch:
     inputs:
@@ -11,9 +14,6 @@ on:
         description: "Version (e.g. 1.2.0)"
         required: true
         default: "1.0.0"
-  push:
-    tags:
-      - "v*"
 
 jobs:
   build-macos:

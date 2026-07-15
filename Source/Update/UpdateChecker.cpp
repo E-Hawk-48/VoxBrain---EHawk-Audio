@@ -140,7 +140,8 @@ void UpdateChecker::run()
     juce::String text;
     if (auto stream = juce::URL (updateUrl()).createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                .withConnectionTimeoutMs (8000)))
+                .withConnectionTimeoutMs (8000)
+                .withExtraHeaders ("User-Agent: VocalForge-Updater\r\n")))   // GitHub API requires a UA
         text = stream->readEntireStreamAsString();
 
     if (threadShouldExit()) return;
@@ -154,7 +155,50 @@ void UpdateChecker::run()
     }
 
     const auto json = juce::JSON::parse (text);
-    const juce::String latest = json.getProperty ("version", "").toString();
+
+    // Installer extension we want for this OS.
+   #if JUCE_WINDOWS
+    const juce::String wantExt = ".exe";
+   #elif JUCE_MAC
+    const juce::String wantExt = ".pkg";
+   #else
+    const juce::String wantExt = ".zip";
+   #endif
+
+    juce::String latest, notes, notesUrl, durl, sha;
+
+    if (json.hasProperty ("tag_name"))
+    {
+        // ---- GitHub Releases API (api.github.com/.../releases/latest) ----
+        latest   = json.getProperty ("tag_name", "").toString();
+        notes    = json.getProperty ("body", "").toString();
+        notesUrl = json.getProperty ("html_url", "").toString();
+
+        if (auto* assets = json.getProperty ("assets", juce::var()).getArray())
+            for (const auto& a : *assets)
+                if (a.getProperty ("name", "").toString().endsWithIgnoreCase (wantExt))
+                {
+                    durl = a.getProperty ("browser_download_url", "").toString();
+                    break;
+                }
+    }
+    else
+    {
+        // ---- Self-hosted appcast.json ----
+        latest   = json.getProperty ("version", "").toString();
+        notes    = json.getProperty ("notes", "").toString();
+        notesUrl = json.getProperty ("notesUrl", "").toString();
+       #if JUCE_WINDOWS
+        const auto platform = json.getProperty ("windows", juce::var());
+       #elif JUCE_MAC
+        const auto platform = json.getProperty ("macos", juce::var());
+       #else
+        const juce::var platform;
+       #endif
+        durl = platform.getProperty ("url", "").toString();
+        sha  = platform.getProperty ("sha256", "").toString();
+    }
+
     if (latest.isEmpty())
     {
         r.state = State::Failed;
@@ -164,8 +208,8 @@ void UpdateChecker::run()
     }
 
     r.latestVersion = latest;
-    r.notes    = json.getProperty ("notes", "").toString();
-    r.notesUrl = json.getProperty ("notesUrl", "").toString();
+    r.notes    = notes;
+    r.notesUrl = notesUrl;
     stampChecked();
 
     if (! isNewer (latest, r.currentVersion))
@@ -174,17 +218,6 @@ void UpdateChecker::run()
         publish (r);
         return;
     }
-
-    // ---- resolve the installer for this platform ----
-   #if JUCE_WINDOWS
-    const auto platform = json.getProperty ("windows", juce::var());
-   #elif JUCE_MAC
-    const auto platform = json.getProperty ("macos", juce::var());
-   #else
-    const juce::var platform;
-   #endif
-    const juce::String durl = platform.getProperty ("url", "").toString();
-    const juce::String sha  = platform.getProperty ("sha256", "").toString();
 
     if (durl.isEmpty())
     {
@@ -220,7 +253,8 @@ void UpdateChecker::run()
     bool ok = false;
     if (auto in = du.createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                .withConnectionTimeoutMs (15000)))
+                .withConnectionTimeoutMs (15000)
+                .withExtraHeaders ("User-Agent: VocalForge-Updater\r\n")))
     {
         juce::FileOutputStream out (dest);
         if (! out.failedToOpen())

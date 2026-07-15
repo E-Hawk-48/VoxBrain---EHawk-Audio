@@ -1,0 +1,75 @@
+name: Release
+
+# Cut a release by pushing a version tag:
+#     git tag v1.2.0
+#     git push origin v1.2.0
+#
+# This builds BOTH installers on cloud runners (macOS .pkg + Windows .exe) and
+# publishes a GitHub Release for that tag with both attached. Installed copies
+# of VocalForge read this release and auto-update. Remember to bump
+# project(VocalForge VERSION x.y.z) in CMakeLists so older copies see it as new.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write        # needed to create the Release + upload assets
+
+jobs:
+  # --------------------------------------------------------------------------
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CMake
+        run: brew install cmake || true
+      - name: Build + package (.pkg)
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          bash Scripts/build_macos.sh
+          bash Scripts/package_macos.sh "$VER"
+      - name: Attach macOS installer to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build-mac/VocalForge-*.pkg
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  # --------------------------------------------------------------------------
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The build script normally pre-downloads ONNX Runtime; do it here too
+      # (ThirdParty/ isn't in the repo).
+      - name: Fetch ONNX Runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ThirdParty | Out-Null
+          curl.exe -L -o ThirdParty/onnxruntime-win-x64-1.20.1.zip `
+            https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip
+
+      - name: Configure + build (Release)
+        shell: pwsh
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release --parallel
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer (.exe)
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/vocalforge.iss
+
+      - name: Attach Windows installer to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/VocalForge-Setup-*.exe
+          fail_on_unmatched_files: true

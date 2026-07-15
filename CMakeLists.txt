@@ -95,10 +95,11 @@ target_compile_definitions(VocalForge PUBLIC
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     # --- Auto-update: current version + where to check for new versions ---
-    #  EDIT VOCALFORGE_UPDATE_URL to the appcast.json on YOUR website before
-    #  release. The plugin fetches it over HTTPS to detect new versions.
+    #  Reads the latest GitHub Release of your repo. Publish a Release (tag like
+    #  v1.2.0) with the .exe + .pkg installers attached and installed copies pick
+    #  it up automatically. (Works because the repo/Releases are public.)
     VOCALFORGE_VERSION="${PROJECT_VERSION}"
-    VOCALFORGE_UPDATE_URL="https://YOUR-DOMAIN.example/vocalforge/appcast.json"
+    VOCALFORGE_UPDATE_URL="https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest"
 )
 
 target_link_libraries(VocalForge
