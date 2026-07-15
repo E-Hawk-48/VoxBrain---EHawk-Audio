@@ -71,4 +71,7 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/voxbrain.iss
 
       - name: Attach Windows installer to the release
-        uses: softprops/action-gh-relea
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/VoxBrain-Setup-*.exe
+          fail_on_unmatched_files: true
