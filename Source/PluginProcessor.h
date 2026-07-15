@@ -7,6 +7,8 @@
 #include "AI/CrepeAnalyzer.h"
 #include "Preset/PresetManager.h"
 #include "Update/UpdateChecker.h"
+#include "Modules/ModuleRack.h"
+#include "Modules/ModuleAdvisor.h"
 
 namespace vf
 {
@@ -61,6 +63,10 @@ public:
 
     PresetManager& getPresets() noexcept                  { return presets; }
     UpdateChecker& getUpdater() noexcept                  { return updater; }
+    mods::ModuleRack& getRack() noexcept                  { return rack; }
+
+    /** Module-level AI recommendations from the last LEARN pass (message thread). */
+    std::vector<mods::ModuleSuggestion> suggestModules() const;
 
     /** Last auto-mix result (message thread only). */
     const AutoMixBrain::Result& getLastResult() const noexcept { return lastResult; }
@@ -77,12 +83,20 @@ private:
     PresetManager  presets { apvts };   // declared after apvts → constructed after it
     UpdateChecker  updater;
 
+    // Modular rack (runs after the fixed chain; empty by default = passthrough).
+    mods::ModuleRack rack;
+    std::atomic<float>* rackOnPtr = nullptr;
+    std::atomic<float>* rackMacroPtr[mods::ModuleRack::Automation::Slots]
+                                    [mods::ModuleRack::Automation::Macros] { {} };
+    mods::ModuleRack::Automation readRackAutomation() const;
+
     // Learn handshake: audio thread finalises snapshot → message thread applies
     std::atomic<bool> learnStopRequested { false };
     std::atomic<bool> snapshotFresh { false };
     AnalysisSnapshot pendingSnapshot;          // written on audio thread while
                                                // snapshotFresh is false, read after true
     AutoMixBrain::Result lastResult;
+    AnalysisSnapshot     lastSnapshot;   // last LEARN snapshot (for module advisor)
 
     // Detected key from the last LEARN pass (for the "Auto" key/scale modes)
     std::atomic<int>  autoKeyRoot  { -1 };

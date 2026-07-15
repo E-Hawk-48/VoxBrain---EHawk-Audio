@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VoxBrain VERSION 0.2.3 LANGUAGES C CXX)
+project(VoxBrain VERSION 0.2.4 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -86,12 +86,18 @@ target_sources(VoxBrain PRIVATE
     Source/Chat/ChatEngine.cpp
     Source/Preset/PresetManager.cpp
     Source/Update/UpdateChecker.cpp
+    Source/Modules/ModuleRegistry.cpp
+    Source/Modules/ModuleRack.cpp
+    Source/Modules/BuiltinModules.cpp
+    Source/Modules/ModuleCatalog.cpp
+    Source/Modules/ModuleAdvisor.cpp
     Source/UI/LookAndFeel.cpp
     Source/UI/SpectrumDisplay.cpp
     Source/UI/ModuleStrip.cpp
     Source/UI/AnalysisPanel.cpp
     Source/UI/PresetBar.cpp
     Source/UI/UpdateBanner.cpp
+    Source/UI/RackView.cpp
 )
 
 target_include_directories(VoxBrain PRIVATE Source)

@@ -8,13 +8,21 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
       processor (p),
       spectrum (p.getAnalysis()),
       presetBar (p.getPresets()),
-      moduleStrip (p.apvts)
+      moduleStrip (p.apvts),
+      rackView (p.apvts, p.getRack(), [&p] { return p.suggestModules(); })
 {
     setLookAndFeel (&lookAndFeel);
 
     learnButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
     learnButton.onClick = [this] { learnClicked(); };
     addAndMakeVisible (learnButton);
+
+    modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
+    modulesButton.onClick = [this] { toggleRack(); };
+    addAndMakeVisible (modulesButton);
+
+    addChildComponent (rackView);   // overlay, hidden until MODULES is clicked
+    rackView.onClose = [this] { toggleRack(); };
     addChildComponent (updateBanner);   // shows itself only when an update is pending
     addAndMakeVisible (spectrum);
     addAndMakeVisible (presetBar);
@@ -34,6 +42,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
         analysisPanel.setResult (r.presetName, r.summary);
         learnButton.setButtonText ("LEARN");
         presetBar.refresh();
+        rackView.refreshAdvisor();     // update module suggestions from the new analysis
     };
 
     // Refresh the toolbar whenever preset/undo/A-B state changes.
@@ -74,6 +83,19 @@ void VoxBrainEditor::learnClicked()
     }
 }
 
+void VoxBrainEditor::toggleRack()
+{
+    rackVisible = ! rackVisible;
+    rackView.setVisible (rackVisible);
+    if (rackVisible)
+    {
+        rackView.refreshAdvisor();
+        rackView.toFront (true);
+    }
+    modulesButton.setButtonText (rackVisible ? "◂ MIXER" : "MODULES");
+    resized();
+}
+
 void VoxBrainEditor::timerCallback()
 {
     // Pulse the learn button while listening
@@ -105,6 +127,13 @@ void VoxBrainEditor::resized()
 
     auto header = area.removeFromTop (52).reduced (16, 8);
     learnButton.setBounds (header.removeFromRight (240));
+    header.removeFromRight (8);
+    modulesButton.setBounds (header.removeFromRight (120));
+
+    // The rack is a full-window overlay below the header.
+    rackView.setBounds (area);
+    if (rackVisible)
+        return;   // rack covers the mixer; skip laying the mixer out underneath
 
     if (updateBanner.isActive())
         updateBanner.setBounds (area.removeFromTop (34).reduced (10, 2));

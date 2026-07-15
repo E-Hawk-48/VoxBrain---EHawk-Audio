@@ -6,6 +6,7 @@
 #include "UI/AnalysisPanel.h"
 #include "UI/PresetBar.h"
 #include "UI/UpdateBanner.h"
+#include "UI/RackView.h"
 
 namespace vf
 {
@@ -29,16 +30,20 @@ public:
 private:
     void timerCallback() override;
     void learnClicked();
+    void toggleRack();
 
     VoxBrainProcessor& processor;
     VoxBrainLookAndFeel lookAndFeel;
 
     juce::TextButton learnButton { "LEARN" };
+    juce::TextButton modulesButton { "MODULES" };
     UpdateBanner updateBanner;
     SpectrumDisplay spectrum;
     PresetBar presetBar;
     AnalysisPanel analysisPanel;
     ModuleStrip moduleStrip;
+    RackView rackView;
+    bool rackVisible = false;
 
     float pulsePhase = 0.0f;
 

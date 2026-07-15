@@ -153,6 +153,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                 onOff (verbLock,  "Reverb Lock",     false),
                 onOff (limitLock, "Limiter Lock",    false));
 
+    // ---- Modular rack: fixed automatable macro pool ------------------------
+    //  VST3 fixes the parameter list at load, so the modular rack exposes a
+    //  fixed pool the host can automate; the processor maps slot i's macros
+    //  onto the i-th module in the rack. Which modules / order / values live in
+    //  the plugin state (getStateInformation), not here.
+    layout.add (onOff ("rack_on", "Rack On", true));
+    for (int s = 0; s < 8; ++s)
+        for (int m = 0; m < 6; ++m)
+            layout.add (std::make_unique<APF> (
+                juce::ParameterID { "rack_s" + juce::String (s) + "_m" + juce::String (m), 1 },
+                "Rack " + juce::String (s + 1) + " Macro " + juce::String (m + 1),
+                juce::NormalisableRange<float> { 0.0f, 1.0f, 0.0001f }, 0.0f));
+
     return layout;
 }
 

@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Modules/ModuleRegistry.h"
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
 
@@ -36,10 +37,29 @@ VoxBrainProcessor::VoxBrainProcessor()
         raw[juce::String (id)] = apvts.getRawParameterValue (id);
     }
 
+    // Modular rack: register the module library + cache its automation pool.
+    mods::registerBuiltInModules();
+    rackOnPtr = apvts.getRawParameterValue ("rack_on");
+    for (int s = 0; s < mods::ModuleRack::Automation::Slots; ++s)
+        for (int m = 0; m < mods::ModuleRack::Automation::Macros; ++m)
+            rackMacroPtr[s][m] = apvts.getRawParameterValue (
+                "rack_s" + juce::String (s) + "_m" + juce::String (m));
+
     learn16k.resize ((size_t) learn16kCapacity, 0.0f);   // preallocated: no RT alloc
     startTimerHz (10);   // message-thread poll for finished learn passes
 
     updater.startCheck();   // background, throttled; no-op until the update URL is set
+}
+
+mods::ModuleRack::Automation VoxBrainProcessor::readRackAutomation() const
+{
+    mods::ModuleRack::Automation a;
+    a.rackOn = rackOnPtr == nullptr || rackOnPtr->load() > 0.5f;
+    for (int s = 0; s < mods::ModuleRack::Automation::Slots; ++s)
+        for (int m = 0; m < mods::ModuleRack::Automation::Macros; ++m)
+            if (rackMacroPtr[s][m] != nullptr)
+                a.macro[s][m] = rackMacroPtr[s][m]->load();
+    return a;
 }
 
 VoxBrainProcessor::~VoxBrainProcessor()
@@ -69,8 +89,9 @@ void VoxBrainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
                                   (juce::uint32) samplesPerBlock,
                                   (juce::uint32) std::max (1, getTotalNumOutputChannels()) };
     chain.prepare (spec);
+    rack.prepare (spec);
     analysis.prepare (sampleRate, (int) spec.numChannels);
-    setLatencySamples (chain.getLatencySamples());
+    setLatencySamples (chain.getLatencySamples() + rack.latencySamples());
     resampleRatio = sampleRate / 16000.0;
     learnResampler.reset();
 }
@@ -174,6 +195,11 @@ void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
 
     chain.process (buffer, readChainParams());
+
+    // Modular rack runs after the fixed chain. Empty by default → passthrough,
+    // so existing behaviour is unchanged until the user inserts modules.
+    const auto rackAuto = readRackAutomation();
+    rack.process (buffer, &rackAuto);
 }
 
 // ============================================================================
@@ -240,6 +266,7 @@ void VoxBrainProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
         autoKeyMajor.store (snapshot.keyIsMajor);
     }
 
+    lastSnapshot = snapshot;           // keep for the module advisor (rack UI)
     lastResult = AutoMixBrain::computeChain (snapshot);
     lastResult.summary << "\n" << engineNote << "\n";
 
@@ -268,6 +295,11 @@ juce::String VoxBrainProcessor::applyChatMessage (const juce::String& message)
 {
     presets.pushUndo ("Chat: " + message);
     return ChatEngine::handleMessage (message, apvts);
+}
+
+std::vector<mods::ModuleSuggestion> VoxBrainProcessor::suggestModules() const
+{
+    return mods::ModuleAdvisor::suggest (lastSnapshot);
 }
 
 bool VoxBrainProcessor::isModuleLocked (const juce::String& paramId) const
@@ -300,14 +332,30 @@ void VoxBrainProcessor::applyBrainResult (const AutoMixBrain::Result& r)
 void VoxBrainProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
+    {
+        // Save the modular rack (which modules, order, params) alongside the
+        // APVTS params so routing persists in sessions AND presets. The rack
+        // lives as a "Rack" child of the state tree; old builds simply ignore it.
+        if (auto rackXml = rack.toXml())
+            xml->addChildElement (rackXml.release());   // xml adopts ownership
         copyXmlToBinary (*xml, destData);
+    }
 }
 
 void VoxBrainProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
+        {
+            // Restore the rack first, then strip its child so it never pollutes
+            // the APVTS value tree (which would duplicate it on the next save).
+            if (auto* rackXml = xml->getChildByName ("Rack"))
+            {
+                rack.fromXml (rackXml);
+                xml->removeChildElement (rackXml, true);
+            }
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        }
 }
 
 juce::AudioProcessorEditor* VoxBrainProcessor::createEditor()

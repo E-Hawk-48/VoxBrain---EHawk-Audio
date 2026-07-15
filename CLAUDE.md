@@ -166,12 +166,64 @@ verified feature per session, same as #1.
   `YOUR-DOMAIN` placeholder and the updater NO-OPs until it's set (no phoning
   home by default). Server side: `update-server/` (appcast.json + README),
   `Scripts/publish_update.ps1`, `installer/voxbrain.iss` (Inno Setup).
+- `Modules/` (modular workstation foundation — WIRED into the live audio path).
+  `Module.h`: base class + `Param` (beginner/advanced, unit, tooltip) +
+  `Descriptor` (id/name/`Category`/tags/description) + ProcessMode
+  (Stereo/Mono/M-S). `ModuleRegistry` = factory + 78-entry searchable catalog
+  (8 implemented, ~70 roadmap) + Smart Search (ranked over name/tags/category/
+  desc — verified: "warm"→Tube, "reverb","pitch","vintage","compress","airy"
+  all return relevant hits). `ModuleRack` = hot-swap ordered chain:
+  add/remove/duplicate/move/bypass/solo/lock, RT-safe process via NON-BLOCKING
+  `SpinLock` try-lock (edits on message thread; ≤1 block passthrough during an
+  edit), summed latency + per-module CPU metering, `toXml`/`fromXml` state,
+  and an `Automation` macro pool. `BuiltinModules.*` = 8 real modules (Gain,
+  Trim, Phase Flip, Stereo Width M/S, Mono Maker LR-crossover, Highpass,
+  Lowpass, Tube Saturation). `ModuleAdvisor` = AnalysisSnapshot → module insert
+  suggestions + rationale ("low-mid buildup → Dynamic EQ", etc.).
+  RACK WIRE-IN (done): the rack runs in `processBlock` AFTER the fixed
+  `VocalChain` — empty by default = clean passthrough, so existing behaviour is
+  unchanged until the user inserts modules. Because VST3 fixes its parameter
+  list at load, `Parameters.cpp` exposes a FIXED generic pool the host can
+  automate: `rack_on` + 8 slots × 6 macros (`rack_s{0..7}_m{0..5}`); the
+  processor caches these pointers and each block maps slot i's macros onto the
+  i-th rack module's first params (`readRackAutomation`). Latency =
+  `chain.getLatencySamples() + rack.latencySamples()`. Rack routing (modules,
+  order, params, bypass/solo/lock) serialises as a `"Rack"` child of the plugin
+  state in `get/setStateInformation`, so it persists in sessions AND presets;
+  old sessions with no Rack child simply load an empty rack. VERIFIED: all
+  Module TUs object-compile vs JUCE; full `PluginProcessor.cpp` integration
+  syntax-compiles vs JUCE + all project headers; offline runtime test — XML
+  round-trip (modules/order/params/bypass restored), unknown-type skip, macro
+  automation drives params + audio, `rack_on=false` passthrough — 14/14 PASS.
+  RACK UI (done — `UI/RackView.*`): a full-window overlay toggled by the header
+  MODULES button. Left column = palette: a Smart-Search box (live
+  `registry.search`) over a `ListBox` of the whole catalog (implemented rows add
+  on click; roadmap rows greyed "SOON"). Right column = the live rack as
+  scrollable `RackModuleCard`s driven by `rack.snapshot()`: slot badge, name +
+  category + latency, ▲▼ reorder, Bypass/Solo/Lock pills (rack node flags),
+  Dup, ✕ remove, live CPU% (8 Hz timer), and up to 6 rotary macro knobs bound
+  via `SliderAttachment` to the `rack_s{slot}_m{k}` params (so every knob is
+  DAW-automatable), labelled by the module's own param names. On every
+  structural edit the view calls `syncMacros()` — reads each module's current
+  param values, normalises, and writes them to that slot's macro params — so a
+  freshly added module sits at its defaults (not min) and modules keep their
+  sound across reorders. Top of the right column = AI advisor chips from
+  `processor.suggestModules()` (ModuleAdvisor on the last LEARN snapshot),
+  refreshed after each LEARN; implemented suggestions insert on click, roadmap
+  ones show "(soon)". VERIFIED: RackView.cpp + PluginEditor.cpp + the updated
+  PluginProcessor.cpp all syntax-compile vs JUCE + all project headers, and
+  RackView.cpp object-compiles clean. NEXT: fill in more module factories
+  category by category, drag-to-reorder (currently ▲▼), let the advisor insert
+  + pre-configure automatically, per-module custom editors, and the
+  marketplace/module-package layer. The fixed VocalChain stays as the default/AI
+  path; the rack is the "advanced modular" layer.
 - `UI/` — dark glass theme (`theme::` colors), SpectrumDisplay (lock-free FIFO
   from analysis), ModuleStrip (11 cards in TWO weighted rows, knobs + combo
   support), AnalysisPanel (preset name + report + chat input), PresetBar (P6:
   preset menu + Save + A/B/Copy + Undo/Redo, delegates to PresetManager), pulsing
-  LEARN button. Editor default 1120×800. PresetBar's Save uses an async
-  AlertWindow (deleteWhenDismissed) name prompt.
+  LEARN button, and RackView (the modular-workstation overlay — see Modules
+  above; toggled by the header MODULES button). Editor default 1120×800.
+  PresetBar's Save uses an async AlertWindow (deleteWhenDismissed) name prompt.
 
 ## Build system — CRITICAL knowledge (each item was a real failure)
 
