@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <array>
 
-#if VF_HAS_ONNX
+#if VB_HAS_ONNX
   // Manual API init: without this, the ORT C++ header binds the API during
   // static initialization (i.e. at plugin DLL load), which fires the
   // delay-loaded onnxruntime.dll BEFORE we can set the search path — the
@@ -32,7 +32,7 @@ namespace
         return 10.0f * std::pow (2.0f, cents / 1200.0f);
     }
 
-#if VF_HAS_ONNX && JUCE_WINDOWS
+#if VB_HAS_ONNX && JUCE_WINDOWS
     /** Directory containing THIS module (the plugin DLL, not the host exe). */
     juce::File getModuleDirectory()
     {
@@ -74,12 +74,12 @@ namespace
 // ============================================================================
 juce::File CrepeAnalyzer::findModelFile()
 {
-#if VF_HAS_ONNX && JUCE_WINDOWS
+#if VB_HAS_ONNX && JUCE_WINDOWS
     const auto moduleDir = getModuleDirectory();
     for (const auto& candidate :
-         { moduleDir.getChildFile ("VocalForgeModels").getChildFile ("crepe-tiny.onnx"),
+         { moduleDir.getChildFile ("VoxBrainModels").getChildFile ("crepe-tiny.onnx"),
            juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("VocalForge").getChildFile ("Models")
+               .getChildFile ("VoxBrain").getChildFile ("Models")
                .getChildFile ("crepe-tiny.onnx") })
     {
         if (candidate.existsAsFile())
@@ -90,10 +90,10 @@ juce::File CrepeAnalyzer::findModelFile()
 }
 
 // ============================================================================
-#if VF_HAS_ONNX
+#if VB_HAS_ONNX
 struct CrepeAnalyzer::Impl
 {
-    Ort::Env env { ORT_LOGGING_LEVEL_ERROR, "VocalForge" };
+    Ort::Env env { ORT_LOGGING_LEVEL_ERROR, "VoxBrain" };
     std::unique_ptr<Ort::Session> session;
     Ort::AllocatorWithDefaultOptions allocator;
     std::string inputName, outputName;
@@ -123,7 +123,7 @@ struct CrepeAnalyzer::Impl {};
 // ============================================================================
 CrepeAnalyzer::CrepeAnalyzer()
 {
-#if VF_HAS_ONNX
+#if VB_HAS_ONNX
     const auto modelFile = findModelFile();
     if (! modelFile.existsAsFile())
     {
@@ -160,7 +160,7 @@ CrepeAnalyzer::~CrepeAnalyzer() = default;
 
 bool CrepeAnalyzer::isAvailable() const noexcept
 {
-#if VF_HAS_ONNX
+#if VB_HAS_ONNX
     return impl != nullptr && impl->session != nullptr;
 #else
     return false;
@@ -172,7 +172,7 @@ std::vector<PitchFrame> CrepeAnalyzer::analyze (const float* audio16k, int numSa
                                                 int hopSamples)
 {
     std::vector<PitchFrame> result;
-#if VF_HAS_ONNX
+#if VB_HAS_ONNX
     if (! isAvailable() || numSamples < kFrameLen)
         return result;
 

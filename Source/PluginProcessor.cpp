@@ -6,7 +6,7 @@ namespace vf
 {
 using namespace vf::param;
 
-VocalForgeProcessor::VocalForgeProcessor()
+VoxBrainProcessor::VoxBrainProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
@@ -42,20 +42,20 @@ VocalForgeProcessor::VocalForgeProcessor()
     updater.startCheck();   // background, throttled; no-op until the update URL is set
 }
 
-VocalForgeProcessor::~VocalForgeProcessor()
+VoxBrainProcessor::~VoxBrainProcessor()
 {
     *aliveFlag = false;               // invalidate pending async callbacks
     aiPool.removeAllJobs (true, 4000);
 }
 
-std::atomic<float>* VocalForgeProcessor::rawParam (const char* id) const
+std::atomic<float>* VoxBrainProcessor::rawParam (const char* id) const
 {
     auto it = raw.find (juce::String (id));
     jassert (it != raw.end());
     return it->second;
 }
 
-bool VocalForgeProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool VoxBrainProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto& in  = layouts.getMainInputChannelSet();
     const auto& out = layouts.getMainOutputChannelSet();
@@ -63,7 +63,7 @@ bool VocalForgeProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
     return in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo();
 }
 
-void VocalForgeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void VoxBrainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     juce::dsp::ProcessSpec spec { sampleRate,
                                   (juce::uint32) samplesPerBlock,
@@ -75,7 +75,7 @@ void VocalForgeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     learnResampler.reset();
 }
 
-ChainParams VocalForgeProcessor::readChainParams() const
+ChainParams VoxBrainProcessor::readChainParams() const
 {
     auto v = [this] (const char* id) { return rawParam (id)->load (std::memory_order_relaxed); };
     auto b = [&v]   (const char* id) { return v (id) > 0.5f; };
@@ -128,7 +128,7 @@ ChainParams VocalForgeProcessor::readChainParams() const
     return p;
 }
 
-void VocalForgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -179,7 +179,7 @@ void VocalForgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 // ============================================================================
 //  LEARN workflow
 // ============================================================================
-void VocalForgeProcessor::setLearning (bool shouldLearn)
+void VoxBrainProcessor::setLearning (bool shouldLearn)
 {
     if (shouldLearn)
     {
@@ -191,7 +191,7 @@ void VocalForgeProcessor::setLearning (bool shouldLearn)
         learnStopRequested.store (true);
 }
 
-void VocalForgeProcessor::timerCallback()
+void VoxBrainProcessor::timerCallback()
 {
     if (! snapshotFresh.exchange (false))
         return;
@@ -231,7 +231,7 @@ void VocalForgeProcessor::timerCallback()
     }
 }
 
-void VocalForgeProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
+void VoxBrainProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
                                          const juce::String& engineNote)
 {
     if (snapshot.keyRoot >= 0)
@@ -264,13 +264,13 @@ void VocalForgeProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
         onAutoMixApplied();
 }
 
-juce::String VocalForgeProcessor::applyChatMessage (const juce::String& message)
+juce::String VoxBrainProcessor::applyChatMessage (const juce::String& message)
 {
     presets.pushUndo ("Chat: " + message);
     return ChatEngine::handleMessage (message, apvts);
 }
 
-bool VocalForgeProcessor::isModuleLocked (const juce::String& paramId) const
+bool VoxBrainProcessor::isModuleLocked (const juce::String& paramId) const
 {
     if (const char* lock = vf::param::lockParamFor (paramId))
         if (auto* lv = apvts.getRawParameterValue (lock))
@@ -278,7 +278,7 @@ bool VocalForgeProcessor::isModuleLocked (const juce::String& paramId) const
     return false;
 }
 
-void VocalForgeProcessor::applyBrainResult (const AutoMixBrain::Result& r)
+void VoxBrainProcessor::applyBrainResult (const AutoMixBrain::Result& r)
 {
     for (const auto& d : r.decisions)
     {
@@ -297,27 +297,27 @@ void VocalForgeProcessor::applyBrainResult (const AutoMixBrain::Result& r)
 // ============================================================================
 //  State
 // ============================================================================
-void VocalForgeProcessor::getStateInformation (juce::MemoryBlock& destData)
+void VoxBrainProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
 
-void VocalForgeProcessor::setStateInformation (const void* data, int sizeInBytes)
+void VoxBrainProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
 }
 
-juce::AudioProcessorEditor* VocalForgeProcessor::createEditor()
+juce::AudioProcessorEditor* VoxBrainProcessor::createEditor()
 {
-    return new VocalForgeEditor (*this);
+    return new VoxBrainEditor (*this);
 }
 } // namespace vf
 
 // ============================================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new vf::VocalForgeProcessor();
+    return new vf::VoxBrainProcessor();
 }

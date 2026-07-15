@@ -3,11 +3,11 @@
 
     Usage:
       Scripts\publish_update.ps1 -Version 1.2.0 `
-        -WinInstaller "C:\path\VocalForge-Setup-1.2.0.exe" `
-        -MacInstaller "C:\path\VocalForge-1.2.0.pkg" `      # optional
-        -BaseUrl "https://ehawkaudio.com/vocalforge" `
+        -WinInstaller "C:\path\VoxBrain-Setup-1.2.0.exe" `
+        -MacInstaller "C:\path\VoxBrain-1.2.0.pkg" `      # optional
+        -BaseUrl "https://voxbrainaudio.com/voxbrain" `
         -Notes "• Added chorus`n• Fixed de-esser" `
-        -NotesUrl "https://ehawkaudio.com/vocalforge/changelog.html"
+        -NotesUrl "https://voxbrainaudio.com/voxbrain/changelog.html"
 
     Then upload the printed files to your website. See update-server\README.md.
 #>
@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Version,
     [Parameter(Mandatory = $true)][string]$WinInstaller,
     [string]$MacInstaller = "",
-    [string]$BaseUrl  = "https://YOUR-DOMAIN.example/vocalforge",
+    [string]$BaseUrl  = "https://YOUR-DOMAIN.example/voxbrain",
     [string]$Notes    = "",
     [string]$NotesUrl = "",
     [string]$OutFile  = "appcast.json"
@@ -43,10 +43,10 @@ if ($MacInstaller -ne "" -and (Test-Path $MacInstaller)) {
 $cast | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 $OutFile
 
 Write-Host ""
-Write-Host "Wrote $OutFile for VocalForge $Version" -ForegroundColor Green
+Write-Host "Wrote $OutFile for VoxBrain $Version" -ForegroundColor Green
 Write-Host ""
 Write-Host "Upload these to $BaseUrl/ (over HTTPS):"
-Write-Host "  - $OutFile   (must be reachable at your VOCALFORGE_UPDATE_URL)"
+Write-Host "  - $OutFile   (must be reachable at your VOXBRAIN_UPDATE_URL)"
 Write-Host "  - $winName"
 if ($cast.macos) { Write-Host "  - $macName" }
 Write-Host ""

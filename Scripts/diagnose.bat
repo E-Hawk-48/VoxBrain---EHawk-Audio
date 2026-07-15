@@ -20,6 +20,6 @@ echo --- msbuild check --- >> "%OUT%"
 dir "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" /b >> "%OUT%" 2>&1
 echo DIAG END >> "%OUT%"
 echo.
-echo Done! Report written to diag.txt in the VocalForge folder.
+echo Done! Report written to diag.txt in the VoxBrain folder.
 echo You can close this window and tell Claude it finished.
 pause

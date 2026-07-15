@@ -33,7 +33,7 @@ void UpdateBanner::setInfo (const UpdateChecker::Info& newInfo)
     switch (info.state)
     {
         case S::Downloading:
-            msg = "Downloading VocalForge " + info.latestVersion + "…";
+            msg = "Downloading VoxBrain " + info.latestVersion + "…";
             active = true;
             break;
 
@@ -42,12 +42,12 @@ void UpdateBanner::setInfo (const UpdateChecker::Info& newInfo)
             if (haveInstaller)
             {
                 msg = launched ? "Installer launched — close your DAW to finish updating."
-                               : "VocalForge " + info.latestVersion + " is ready to install.";
+                               : "VoxBrain " + info.latestVersion + " is ready to install.";
                 showInstall = ! launched;
             }
             else
             {
-                msg = "VocalForge " + info.latestVersion + " is available.";
+                msg = "VoxBrain " + info.latestVersion + " is available.";
             }
             showNotes = info.notes.isNotEmpty() || info.notesUrl.isNotEmpty();
             break;
@@ -93,7 +93,7 @@ void UpdateBanner::doNotes()
     else if (info.notes.isNotEmpty())
     {
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::NoIcon,
-                                                "What's new in VocalForge " + info.latestVersion,
+                                                "What's new in VoxBrain " + info.latestVersion,
                                                 info.notes, "OK");
     }
 }

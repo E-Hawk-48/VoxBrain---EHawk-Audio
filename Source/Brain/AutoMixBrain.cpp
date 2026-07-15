@@ -361,7 +361,7 @@ juce::String AutoMixBrain::buildSummary (const AnalysisSnapshot& s,
                                          const std::vector<Decision>& d)
 {
     juce::String out;
-    out << "== VocalForge Analysis ==\n";
+    out << "== VoxBrain Analysis ==\n";
     out << "Peak " << juce::String (s.peakDb, 1) << " dB | RMS " << juce::String (s.rmsDb, 1)
         << " dB | Crest " << juce::String (s.crestDb, 1) << " dB\n";
     out << "Integrated " << juce::String (s.integratedLufs, 1) << " LUFS | Noise floor "

@@ -6,8 +6,8 @@ name: Release
 #
 # This builds BOTH installers on cloud runners (macOS .pkg + Windows .exe) and
 # publishes a GitHub Release for that tag with both attached. Installed copies
-# of VocalForge read this release and auto-update. Remember to bump
-# project(VocalForge VERSION x.y.z) in CMakeLists so older copies see it as new.
+# of VoxBrain read this release and auto-update. Remember to bump
+# project(VoxBrain VERSION x.y.z) in CMakeLists so older copies see it as new.
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
       - name: Attach macOS installer to the release
         uses: softprops/action-gh-release@v2
         with:
-          files: build-mac/VocalForge-*.pkg
+          files: build-mac/VoxBrain-*.pkg
           generate_release_notes: true
           fail_on_unmatched_files: true
 
@@ -68,10 +68,7 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${{ github.ref_name }}".TrimStart('v')
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/vocalforge.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/voxbrain.iss
 
       - name: Attach Windows installer to the release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: installer/VocalForge-Setup-*.exe
-          fail_on_unmatched_files: true
+        uses: softprops/action-gh-relea

@@ -11,19 +11,19 @@
 namespace vf
 {
 // ============================================================================
-//  VocalForgeProcessor — plugin entry point.
+//  VoxBrainProcessor — plugin entry point.
 //  LEARN workflow:
 //    1. GUI calls setLearning(true); analysis accumulates while audio plays.
 //    2. GUI calls setLearning(false); snapshot is finalised on the audio
 //       thread and picked up here; AutoMixBrain runs on the message thread
 //       and writes every decision into the APVTS (visible to host automation).
 // ============================================================================
-class VocalForgeProcessor : public juce::AudioProcessor,
+class VoxBrainProcessor : public juce::AudioProcessor,
                             private juce::Timer
 {
 public:
-    VocalForgeProcessor();
-    ~VocalForgeProcessor() override;
+    VoxBrainProcessor();
+    ~VoxBrainProcessor() override;
 
     // ---- AudioProcessor ----------------------------------------------------
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -34,7 +34,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override                       { return true; }
 
-    const juce::String getName() const override           { return "VocalForge"; }
+    const juce::String getName() const override           { return "VoxBrain"; }
     bool acceptsMidi() const override                     { return false; }
     bool producesMidi() const override                    { return false; }
     double getTailLengthSeconds() const override          { return 3.0; }
@@ -48,7 +48,7 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    // ---- VocalForge API (GUI) ----------------------------------------------
+    // ---- VoxBrain API (GUI) ----------------------------------------------
     juce::AudioProcessorValueTreeState apvts;
     AnalysisEngine& getAnalysis() noexcept                { return analysis; }
     VocalChain&     getChain()    noexcept                { return chain; }
@@ -107,6 +107,6 @@ private:
     std::unordered_map<juce::String, std::atomic<float>*> raw;
     std::atomic<float>* rawParam (const char* id) const;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalForgeProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VoxBrainProcessor)
 };
 } // namespace vf

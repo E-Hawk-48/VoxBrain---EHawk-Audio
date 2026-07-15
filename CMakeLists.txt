@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VocalForge VERSION 0.2.2 LANGUAGES C CXX)
+project(VoxBrain VERSION 0.2.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,28 +44,35 @@ endif()
 # Plugin target
 # --------------------------------------------------------------------------
 # Formats: VST3 + Standalone on every platform; add Audio Unit on macOS.
-set(VF_FORMATS VST3 Standalone)
+set(VB_FORMATS VST3 Standalone)
 if(APPLE)
-    list(APPEND VF_FORMATS AU)
+    list(APPEND VB_FORMATS AU)
 endif()
 
-juce_add_plugin(VocalForge
-    COMPANY_NAME                "EHawk Audio"
-    BUNDLE_ID                   "com.ehawkaudio.vocalforge"
+juce_add_plugin(VoxBrain
+    COMPANY_NAME                "VoxBrain Audio"
+    BUNDLE_ID                   "com.voxbrainaudio.voxbrain"
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD     FALSE  # copy handled by build script (needs admin)
+    # NOTE: the 4-char PLUGIN_MANUFACTURER_CODE / PLUGIN_CODE are the plugin's
+    # binary VST3/AU identity. They are intentionally NOT changed by the VoxBrain
+    # rebrand — altering them makes hosts treat this as a brand-new plugin and
+    # breaks any existing project that already loaded it. They are never shown to
+    # users, so they carry no visible branding.
     PLUGIN_MANUFACTURER_CODE    EHwk
     PLUGIN_CODE                 Vfge
-    FORMATS                     ${VF_FORMATS}
-    PRODUCT_NAME                "VocalForge"
+    FORMATS                     ${VB_FORMATS}
+    PRODUCT_NAME                "VoxBrain"
+    DESCRIPTION                 "AI Vocal Mixing Suite"
+    COMPANY_COPYRIGHT           "© 2026 VoxBrain Audio. All Rights Reserved."
     VST3_CATEGORIES             Fx Dynamics EQ Pitch
 )
 
-target_sources(VocalForge PRIVATE
+target_sources(VoxBrain PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/Parameters.cpp
@@ -87,9 +94,9 @@ target_sources(VocalForge PRIVATE
     Source/UI/UpdateBanner.cpp
 )
 
-target_include_directories(VocalForge PRIVATE Source)
+target_include_directories(VoxBrain PRIVATE Source)
 
-target_compile_definitions(VocalForge PUBLIC
+target_compile_definitions(VoxBrain PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
@@ -98,11 +105,13 @@ target_compile_definitions(VocalForge PUBLIC
     #  Reads the latest GitHub Release of your repo. Publish a Release (tag like
     #  v1.2.0) with the .exe + .pkg installers attached and installed copies pick
     #  it up automatically. (Works because the repo/Releases are public.)
-    VOCALFORGE_VERSION="${PROJECT_VERSION}"
-    VOCALFORGE_UPDATE_URL="https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest"
+    #  NOTE: the repo is still named Custom-Vocal-Plugin on GitHub — this URL
+    #  matches the real repo. If you rename the repo to VoxBrain, update it here.
+    VOXBRAIN_VERSION="${PROJECT_VERSION}"
+    VOXBRAIN_UPDATE_URL="https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest"
 )
 
-target_link_libraries(VocalForge
+target_link_libraries(VoxBrain
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
@@ -115,14 +124,14 @@ target_link_libraries(VocalForge
 
 # SIMD + fast float. AVX2 is x86-only — never pass -mavx2 on Apple Silicon (arm64).
 if(MSVC)
-    target_compile_options(VocalForge PRIVATE /arch:AVX2 /fp:fast)
+    target_compile_options(VoxBrain PRIVATE /arch:AVX2 /fp:fast)
 elseif(APPLE)
     # Universal / Apple-Silicon safe: no x86 -mavx2. CMAKE_OSX_ARCHITECTURES
     # (set by build_macos.sh) controls arm64/x86_64; add AVX2 only for x86 slices.
-    target_compile_options(VocalForge PRIVATE -ffast-math
+    target_compile_options(VoxBrain PRIVATE -ffast-math
         "$<$<STREQUAL:${CMAKE_OSX_ARCHITECTURES},x86_64>:-mavx2>")
 else()
-    target_compile_options(VocalForge PRIVATE -mavx2 -ffast-math)
+    target_compile_options(VoxBrain PRIVATE -mavx2 -ffast-math)
 endif()
 
 # --------------------------------------------------------------------------
@@ -131,11 +140,11 @@ endif()
 # at runtime — plugins can't rely on the host exe's directory).
 # --------------------------------------------------------------------------
 if(WIN32)
-    target_compile_definitions(VocalForge PUBLIC VF_HAS_ONNX=1)
-    target_include_directories(VocalForge PRIVATE "${ORT_ROOT}/include")
-    target_link_libraries(VocalForge PRIVATE "${ORT_ROOT}/lib/onnxruntime.lib" delayimp)
+    target_compile_definitions(VoxBrain PUBLIC VB_HAS_ONNX=1)
+    target_include_directories(VoxBrain PRIVATE "${ORT_ROOT}/include")
+    target_link_libraries(VoxBrain PRIVATE "${ORT_ROOT}/lib/onnxruntime.lib" delayimp)
 
-    foreach(tgt IN ITEMS VocalForge_VST3 VocalForge_Standalone)
+    foreach(tgt IN ITEMS VoxBrain_VST3 VoxBrain_Standalone)
         # CRITICAL: the delay-load flag must be on the final linked binaries.
         # (On the shared-code static lib it is silently discarded, producing a
         # hard import of onnxruntime.dll that breaks plugin loading.)
@@ -143,11 +152,11 @@ if(WIN32)
         add_custom_command(TARGET ${tgt} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${ORT_ROOT}/lib/onnxruntime.dll" "$<TARGET_FILE_DIR:${tgt}>"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${tgt}>/VocalForgeModels"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${tgt}>/VoxBrainModels"
             COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-                    "${CMAKE_CURRENT_SOURCE_DIR}/Models" "$<TARGET_FILE_DIR:${tgt}>/VocalForgeModels"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/Models" "$<TARGET_FILE_DIR:${tgt}>/VoxBrainModels"
         )
     endforeach()
 else()
-    target_compile_definitions(VocalForge PUBLIC VF_HAS_ONNX=0)
+    target_compile_definitions(VoxBrain PUBLIC VB_HAS_ONNX=0)
 endif()

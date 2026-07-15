@@ -1,7 +1,7 @@
-# VocalForge — AI Vocal Engineer (VST3)
+# VoxBrain — AI Vocal Engineer (VST3)
 
 One-button intelligent vocal mixing. Insert on a vocal track, click **LEARN**, play the
-vocal, click again — VocalForge analyzes the recording and builds a complete
+vocal, click again — VoxBrain analyzes the recording and builds a complete
 professional chain with a full written explanation of every decision.
 
 **V1 status:** working auto-mix core. See the roadmap below for what comes next.
@@ -24,7 +24,7 @@ cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --parallel
 ```
 
-Output: `build\VocalForge_artefacts\Release\VST3\VocalForge.vst3` — JUCE also copies it
+Output: `build\VoxBrain_artefacts\Release\VST3\VoxBrain.vst3` — JUCE also copies it
 to the system VST3 folder automatically. A Standalone .exe is built too (useful for
 testing with your mic without a DAW). First build takes several minutes (JUCE download + compile).
 
@@ -32,7 +32,7 @@ Tested-target DAWs: Cakewalk/Sonar, FL Studio, Ableton, Reaper, Studio One, Cuba
 
 ## Using it
 
-1. Insert VocalForge on your vocal track.
+1. Insert VoxBrain on your vocal track.
 2. Click **LEARN** — the button pulses while listening.
 3. Play the loudest / most representative section of the vocal (8–30 s is ideal).
 4. Click again. In under a second the AI engineer:

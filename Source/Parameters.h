@@ -3,7 +3,7 @@
 
 // ============================================================================
 //  Parameters.h
-//  Central definition of every automatable parameter in VocalForge.
+//  Central definition of every automatable parameter in VoxBrain.
 //  All IDs are stable strings — never reorder/rename after release.
 // ============================================================================
 namespace vf::param

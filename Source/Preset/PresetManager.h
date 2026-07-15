@@ -17,8 +17,8 @@ namespace vf
 //                       active slot and recalls the other (the inactive slot is
 //                       auto-cloned on first use so B starts as a copy of A).
 //  * Presets          : built-in factory presets (partial overrides on top of
-//                       the defaults) plus user .vfpreset files under
-//                       <userAppData>/VocalForge/Presets.
+//                       the defaults) plus user .vbpreset files under
+//                       <userAppData>/VoxBrain/Presets.
 //
 //  All operations run on the message thread (parameter writes via
 //  setValueNotifyingHost keep host automation + UI attachments in sync).

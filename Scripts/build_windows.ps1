@@ -1,12 +1,12 @@
 # ============================================================
-#  VocalForge - Windows build script
+#  VoxBrain - Windows build script
 #  Auto-detects Visual Studio 2022 OR 2026 (IDE or Build Tools)
 #  via vswhere and uses the matching CMake generator.
 # ============================================================
 $ErrorActionPreference = "Continue"
 Set-Location (Join-Path $PSScriptRoot "..")
 $log = Join-Path (Get-Location) "build_log.txt"
-"VocalForge build started $(Get-Date)" | Out-File $log -Encoding utf8
+"VoxBrain build started $(Get-Date)" | Out-File $log -Encoding utf8
 
 function Fail($msg) {
     Write-Host ""
@@ -106,7 +106,7 @@ Write-Host "[2/2] Compiling (several minutes on first build)..." -ForegroundColo
 if ($LASTEXITCODE -ne 0) { Fail "Compile step failed (see output above)" }
 
 # ---- 5. Install VST3 into the system folder ------------------
-$vst3Src  = Join-Path (Get-Location) "build\VocalForge_artefacts\Release\VST3\VocalForge.vst3"
+$vst3Src  = Join-Path (Get-Location) "build\VoxBrain_artefacts\Release\VST3\VoxBrain.vst3"
 $vst3Dest = "C:\Program Files\Common Files\VST3"
 $installed = $false
 if (Test-Path $vst3Src) {
@@ -120,7 +120,7 @@ if (Test-Path $vst3Src) {
         try {
             Start-Process powershell -Verb RunAs -Wait -ArgumentList `
                 "-NoProfile", "-Command", "Copy-Item '$vst3Src' '$vst3Dest' -Recurse -Force"
-            $installed = Test-Path (Join-Path $vst3Dest "VocalForge.vst3")
+            $installed = Test-Path (Join-Path $vst3Dest "VoxBrain.vst3")
         }
         catch { $installed = $false }
     }
@@ -129,8 +129,8 @@ if (Test-Path $vst3Src) {
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host " BUILD SUCCEEDED" -ForegroundColor Green
-Write-Host " VST3:       build\VocalForge_artefacts\Release\VST3\VocalForge.vst3"
-Write-Host " Standalone: build\VocalForge_artefacts\Release\Standalone\VocalForge.exe"
+Write-Host " VST3:       build\VoxBrain_artefacts\Release\VST3\VoxBrain.vst3"
+Write-Host " Standalone: build\VoxBrain_artefacts\Release\Standalone\VoxBrain.exe"
 if ($installed) {
     Write-Host " Installed to C:\Program Files\Common Files\VST3 - rescan plugins in your DAW." -ForegroundColor Green
 } else {

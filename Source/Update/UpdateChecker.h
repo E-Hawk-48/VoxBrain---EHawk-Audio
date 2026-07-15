@@ -10,8 +10,8 @@ namespace vf
 //  UpdateChecker — cross-platform in-plugin auto-update client (Win + macOS).
 //
 //  Runs entirely OFF the audio thread on its own background thread. It fetches
-//  an appcast.json from VOCALFORGE_UPDATE_URL over HTTPS, compares the
-//  advertised version to this build (VOCALFORGE_VERSION), and — using the
+//  an appcast.json from VOXBRAIN_UPDATE_URL over HTTPS, compares the
+//  advertised version to this build (VOXBRAIN_VERSION), and — using the
 //  "silent download" model — quietly downloads the platform installer to a
 //  local Updates folder, verifying its SHA-256 if the manifest provides one.
 //
@@ -26,8 +26,8 @@ namespace vf
 //    "version": "1.2.0",
 //    "notes":   "• line one\n• line two",
 //    "notesUrl":"https://yoursite/changelog",
-//    "windows": { "url": "https://…/VocalForge-Setup-1.2.0.exe", "sha256": "…" },
-//    "macos":   { "url": "https://…/VocalForge-1.2.0.pkg",       "sha256": "…" }
+//    "windows": { "url": "https://…/VoxBrain-Setup-1.2.0.exe", "sha256": "…" },
+//    "macos":   { "url": "https://…/VoxBrain-1.2.0.pkg",       "sha256": "…" }
 //  }
 // ============================================================================
 class UpdateChecker : private juce::Thread

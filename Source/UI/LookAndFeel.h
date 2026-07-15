@@ -20,12 +20,12 @@ namespace theme
 }
 
 // ============================================================================
-//  VocalForgeLookAndFeel — modern rotary knobs, pill buttons, glass panels
+//  VoxBrainLookAndFeel — modern rotary knobs, pill buttons, glass panels
 // ============================================================================
-class VocalForgeLookAndFeel : public juce::LookAndFeel_V4
+class VoxBrainLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    VocalForgeLookAndFeel();
+    VoxBrainLookAndFeel();
 
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h,
                            float sliderPos, float startAngle, float endAngle,

@@ -10,18 +10,18 @@
 namespace vf
 {
 // ============================================================================
-//  VocalForgeEditor — main plugin window.
+//  VoxBrainEditor — main plugin window.
 //  Layout:  header (logo + LEARN button)
 //           spectrum display
 //           analysis panel (AI report)
 //           module strip (8 modules)
 // ============================================================================
-class VocalForgeEditor : public juce::AudioProcessorEditor,
+class VoxBrainEditor : public juce::AudioProcessorEditor,
                          private juce::Timer
 {
 public:
-    explicit VocalForgeEditor (VocalForgeProcessor&);
-    ~VocalForgeEditor() override;
+    explicit VoxBrainEditor (VoxBrainProcessor&);
+    ~VoxBrainEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -30,8 +30,8 @@ private:
     void timerCallback() override;
     void learnClicked();
 
-    VocalForgeProcessor& processor;
-    VocalForgeLookAndFeel lookAndFeel;
+    VoxBrainProcessor& processor;
+    VoxBrainLookAndFeel lookAndFeel;
 
     juce::TextButton learnButton { "LEARN" };
     UpdateBanner updateBanner;
@@ -42,6 +42,6 @@ private:
 
     float pulsePhase = 0.0f;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalForgeEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VoxBrainEditor)
 };
 } // namespace vf

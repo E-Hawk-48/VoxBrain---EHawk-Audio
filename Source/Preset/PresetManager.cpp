@@ -118,7 +118,7 @@ void PresetManager::copyToOther()
 juce::File PresetManager::userPresetDir() const
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("VocalForge").getChildFile ("Presets");
+               .getChildFile ("VoxBrain").getChildFile ("Presets");
 }
 
 juce::String PresetManager::sanitize (const juce::String& name)
@@ -135,7 +135,7 @@ juce::StringArray PresetManager::userPresetNames() const
     juce::StringArray names;
     const auto dir = userPresetDir();
     if (dir.isDirectory())
-        for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.vfpreset"))
+        for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.vbpreset"))
             names.add (f.getFileNameWithoutExtension());
     names.sortNatural();
     return names;
@@ -149,9 +149,9 @@ bool PresetManager::saveUserPreset (const juce::String& name)
 
     const auto dir = userPresetDir();
     dir.createDirectory();
-    const auto file = dir.getChildFile (clean + ".vfpreset");
+    const auto file = dir.getChildFile (clean + ".vbpreset");
 
-    juce::XmlElement xml ("VocalForgePreset");
+    juce::XmlElement xml ("VoxBrainPreset");
     xml.setAttribute ("name", clean);
     xml.setAttribute ("version", 1);
     for (const auto& [id, v] : capture())
@@ -165,9 +165,9 @@ bool PresetManager::saveUserPreset (const juce::String& name)
 
 bool PresetManager::loadUserPreset (const juce::String& stem)
 {
-    const auto file = userPresetDir().getChildFile (stem + ".vfpreset");
+    const auto file = userPresetDir().getChildFile (stem + ".vbpreset");
     auto xml = juce::XmlDocument::parse (file);
-    if (xml == nullptr || ! xml->hasTagName ("VocalForgePreset"))
+    if (xml == nullptr || ! xml->hasTagName ("VoxBrainPreset"))
         return false;
 
     pushUndo ("Load " + stem);

@@ -2,7 +2,7 @@
 
 namespace vf
 {
-VocalForgeLookAndFeel::VocalForgeLookAndFeel()
+VoxBrainLookAndFeel::VoxBrainLookAndFeel()
 {
     setColour (juce::ResizableWindow::backgroundColourId, theme::bg);
     setColour (juce::Slider::textBoxTextColourId,     theme::text);
@@ -17,7 +17,7 @@ VocalForgeLookAndFeel::VocalForgeLookAndFeel()
     setColour (juce::PopupMenu::textColourId,         theme::text);
 }
 
-void VocalForgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
+void VoxBrainLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                                               float sliderPos, float startAngle, float endAngle,
                                               juce::Slider& slider)
 {
@@ -57,7 +57,7 @@ void VocalForgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
 }
 
-void VocalForgeLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b,
+void VoxBrainLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b,
                                               bool highlighted, bool)
 {
     const auto bounds = b.getLocalBounds().toFloat().reduced (1.0f);
@@ -74,7 +74,7 @@ void VocalForgeLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleBut
     g.drawText (b.getButtonText(), bounds, juce::Justification::centred);
 }
 
-void VocalForgeLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b,
+void VoxBrainLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b,
                                                   const juce::Colour& backgroundColour,
                                                   bool highlighted, bool down)
 {
@@ -89,7 +89,7 @@ void VocalForgeLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Butto
     g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
 }
 
-juce::Font VocalForgeLookAndFeel::getLabelFont (juce::Label& l)
+juce::Font VoxBrainLookAndFeel::getLabelFont (juce::Label& l)
 {
     return juce::Font (juce::FontOptions (juce::jmin (13.0f, (float) l.getHeight() - 2.0f)));
 }

@@ -9,14 +9,14 @@ namespace
 {
     constexpr int kMinCheckIntervalHours = 4;
 
-    juce::File vocalForgeAppDataDir()
+    juce::File voxBrainAppDataDir()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("VocalForge");
+                   .getChildFile ("VoxBrain");
     }
 }
 
-UpdateChecker::UpdateChecker() : juce::Thread ("VocalForge Update") {}
+UpdateChecker::UpdateChecker() : juce::Thread ("VoxBrain Update") {}
 
 UpdateChecker::~UpdateChecker()
 {
@@ -27,8 +27,8 @@ UpdateChecker::~UpdateChecker()
 // ---------------------------------------------------------------------------
 juce::String UpdateChecker::currentVersion()
 {
-   #ifdef VOCALFORGE_VERSION
-    return juce::String (VOCALFORGE_VERSION);
+   #ifdef VOXBRAIN_VERSION
+    return juce::String (VOXBRAIN_VERSION);
    #else
     return "0.0.0";
    #endif
@@ -36,8 +36,8 @@ juce::String UpdateChecker::currentVersion()
 
 juce::String UpdateChecker::updateUrl()
 {
-   #ifdef VOCALFORGE_UPDATE_URL
-    return juce::String (VOCALFORGE_UPDATE_URL);
+   #ifdef VOXBRAIN_UPDATE_URL
+    return juce::String (VOXBRAIN_UPDATE_URL);
    #else
     return {};
    #endif
@@ -45,14 +45,14 @@ juce::String UpdateChecker::updateUrl()
 
 juce::File UpdateChecker::updatesDir()
 {
-    auto d = vocalForgeAppDataDir().getChildFile ("Updates");
+    auto d = voxBrainAppDataDir().getChildFile ("Updates");
     d.createDirectory();
     return d;
 }
 
 juce::File UpdateChecker::settingsFile() const
 {
-    return vocalForgeAppDataDir().getChildFile ("update.check");
+    return voxBrainAppDataDir().getChildFile ("update.check");
 }
 
 bool UpdateChecker::throttled() const
@@ -67,7 +67,7 @@ bool UpdateChecker::throttled() const
 
 void UpdateChecker::stampChecked() const
 {
-    vocalForgeAppDataDir().createDirectory();
+    voxBrainAppDataDir().createDirectory();
     settingsFile().replaceWithText (juce::String (juce::Time::getCurrentTime().toMilliseconds()));
 }
 
@@ -141,7 +141,7 @@ void UpdateChecker::run()
     if (auto stream = juce::URL (updateUrl()).createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (8000)
-                .withExtraHeaders ("User-Agent: VocalForge-Updater\r\n")))   // GitHub API requires a UA
+                .withExtraHeaders ("User-Agent: VoxBrain-Updater\r\n")))   // GitHub API requires a UA
         text = stream->readEntireStreamAsString();
 
     if (threadShouldExit()) return;
@@ -231,7 +231,7 @@ void UpdateChecker::run()
 
     // ---- download (silent) ----
     const juce::URL du (durl);
-    const auto name = du.getFileName().isNotEmpty() ? du.getFileName() : ("VocalForge-" + latest);
+    const auto name = du.getFileName().isNotEmpty() ? du.getFileName() : ("VoxBrain-" + latest);
     const juce::File dest = updatesDir().getChildFile (name);
 
     const auto matchesSha = [&] (const juce::File& f)
@@ -254,7 +254,7 @@ void UpdateChecker::run()
     if (auto in = du.createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (15000)
-                .withExtraHeaders ("User-Agent: VocalForge-Updater\r\n")))
+                .withExtraHeaders ("User-Agent: VoxBrain-Updater\r\n")))
     {
         juce::FileOutputStream out (dest);
         if (! out.failedToOpen())

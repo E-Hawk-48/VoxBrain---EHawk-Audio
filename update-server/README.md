@@ -1,13 +1,13 @@
-# VocalForge updates — via GitHub Releases
+# VoxBrain updates — via GitHub Releases
 
-VocalForge auto-updates by reading the **latest GitHub Release** of your repo.
+VoxBrain auto-updates by reading the **latest GitHub Release** of your repo.
 No web server or `appcast.json` to maintain — you just publish a Release with the
 installers attached and installed copies pick it up.
 
 The plugin reads (baked into the build, in `CMakeLists.txt`):
 
 ```
-VOCALFORGE_UPDATE_URL = https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest
+VOXBRAIN_UPDATE_URL = https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest
 ```
 
 On load (≤ once every 4 h) it fetches that, compares the release's `tag_name`
@@ -18,7 +18,7 @@ the matching asset — the `.exe` on Windows, the `.pkg` on macOS — then shows
 ## How to publish an update (fully automated)
 
 1. Bump the version in `CMakeLists.txt`:
-   `project(VocalForge VERSION 1.2.0 …)`
+   `project(VoxBrain VERSION 1.2.0 …)`
 2. Commit + push that.
 3. Tag it and push the tag:
    ```
@@ -38,8 +38,8 @@ next DAW launch.
 
 The macOS job and Windows job are independent, so a Windows failure still
 publishes the release with the `.pkg`. To add the Windows installer by hand:
-build locally (`Scripts\build_windows.bat`, then compile `installer\vocalforge.iss`
-with Inno Setup) and drag the resulting `VocalForge-Setup-1.2.0.exe` onto the
+build locally (`Scripts\build_windows.bat`, then compile `installer\voxbrain.iss`
+with Inno Setup) and drag the resulting `VoxBrain-Setup-1.2.0.exe` onto the
 release page. I can also fix the CI job — send me the failing log.
 
 ## Important notes
@@ -59,4 +59,4 @@ release page. I can also fix the CI job — send me the failing log.
 `appcast.json` + `Scripts/publish_update.ps1` in this folder are the alternative
 for hosting updates on your own website instead of GitHub. The plugin
 auto-detects the format, so you can switch later by just changing
-`VOCALFORGE_UPDATE_URL` back to your `appcast.json` URL.
+`VOXBRAIN_UPDATE_URL` back to your `appcast.json` URL.

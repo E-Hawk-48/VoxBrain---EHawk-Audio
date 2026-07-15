@@ -1,12 +1,12 @@
 # ============================================================
-#  VocalForge - packages the built VST3 into a shareable zip
+#  VoxBrain - packages the built VST3 into a shareable zip
 #  with install instructions. Run via package_plugin.bat.
 # ============================================================
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
-$bundle = "build\VocalForge_artefacts\Release\VST3\VocalForge.vst3"
-$zipOut = "VocalForge-v0.1.0-win64.zip"
+$bundle = "build\VoxBrain_artefacts\Release\VST3\VoxBrain.vst3"
+$zipOut = "VoxBrain-v0.1.0-win64.zip"
 
 if (-not (Test-Path $bundle)) {
     Write-Host "No built plugin found at $bundle" -ForegroundColor Red
@@ -17,9 +17,9 @@ if (-not (Test-Path $bundle)) {
 # Sanity-check the bundle contents
 $binDir = Join-Path $bundle "Contents\x86_64-win"
 $checks = @(
-    (Join-Path $binDir "VocalForge.vst3"),
+    (Join-Path $binDir "VoxBrain.vst3"),
     (Join-Path $binDir "onnxruntime.dll"),
-    (Join-Path $binDir "VocalForgeModels\crepe-tiny.onnx")
+    (Join-Path $binDir "VoxBrainModels\crepe-tiny.onnx")
 )
 foreach ($c in $checks) {
     if (-not (Test-Path $c)) {
@@ -34,18 +34,18 @@ Write-Host "Bundle check passed (plugin + ONNX runtime + CREPE model present)." 
 $stage = "build\_package"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
-Copy-Item $bundle (Join-Path $stage "VocalForge.vst3") -Recurse
+Copy-Item $bundle (Join-Path $stage "VoxBrain.vst3") -Recurse
 
 @"
-VocalForge - AI Vocal Engineer (VST3, Windows 64-bit)
+VoxBrain - AI Vocal Engineer (VST3, Windows 64-bit)
 =====================================================
 
 INSTALL
-1. Copy the whole "VocalForge.vst3" FOLDER (keep it intact!) into:
+1. Copy the whole "VoxBrain.vst3" FOLDER (keep it intact!) into:
       C:\Program Files\Common Files\VST3\
    (Windows will ask for administrator permission - click Continue.)
 2. Open your DAW and rescan plugins (or just restart the DAW).
-3. Insert "VocalForge" on a vocal track.
+3. Insert "VoxBrain" on a vocal track.
 
 USE
 - Click LEARN, play/sing the vocal for 10-30 seconds, click again.

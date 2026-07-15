@@ -3,7 +3,7 @@
 
 namespace vf
 {
-VocalForgeEditor::VocalForgeEditor (VocalForgeProcessor& p)
+VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       spectrum (p.getAnalysis()),
@@ -50,7 +50,7 @@ VocalForgeEditor::VocalForgeEditor (VocalForgeProcessor& p)
     startTimerHz (20);
 }
 
-VocalForgeEditor::~VocalForgeEditor()
+VoxBrainEditor::~VoxBrainEditor()
 {
     processor.onAutoMixApplied = nullptr;
     processor.getPresets().onStateChanged = nullptr;
@@ -58,7 +58,7 @@ VocalForgeEditor::~VocalForgeEditor()
     setLookAndFeel (nullptr);
 }
 
-void VocalForgeEditor::learnClicked()
+void VoxBrainEditor::learnClicked()
 {
     if (processor.isLearning())
     {
@@ -74,7 +74,7 @@ void VocalForgeEditor::learnClicked()
     }
 }
 
-void VocalForgeEditor::timerCallback()
+void VoxBrainEditor::timerCallback()
 {
     // Pulse the learn button while listening
     if (processor.isLearning())
@@ -86,20 +86,20 @@ void VocalForgeEditor::timerCallback()
     }
 }
 
-void VocalForgeEditor::paint (juce::Graphics& g)
+void VoxBrainEditor::paint (juce::Graphics& g)
 {
     g.fillAll (theme::bg);
 
     auto header = getLocalBounds().removeFromTop (52).reduced (16, 0);
     g.setColour (theme::text);
     g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-    g.drawText ("VOCALFORGE", header, juce::Justification::centredLeft);
+    g.drawText ("VOXBRAIN", header, juce::Justification::centredLeft);
     g.setColour (theme::accent);
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("AI VOCAL ENGINEER", header.translated (170, 5), juce::Justification::centredLeft);
 }
 
-void VocalForgeEditor::resized()
+void VoxBrainEditor::resized()
 {
     auto area = getLocalBounds();
 

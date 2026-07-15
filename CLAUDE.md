@@ -1,4 +1,4 @@
-# VocalForge — Project Handoff / Session Context
+# VoxBrain — Project Handoff / Session Context
 
 AI-powered vocal processing VST3 plugin (Windows, JUCE 8, C++20). One-button
 auto-mix: user clicks LEARN, sings, clicks again → analysis → expert-system
@@ -47,7 +47,7 @@ REMAINING (grouped):
   #8 spectrum cursor readout, #9 universal typography, #10 simple/advanced modes,
   #11 built-in help.
 - **Platform/quality**: #19 DSP quality audit.  (#12 auto-update DONE.)
-  Still TODO for full macOS: enable ONNX/CREPE on macOS (currently VF_HAS_ONNX=0
+  Still TODO for full macOS: enable ONNX/CREPE on macOS (currently VB_HAS_ONNX=0
   → DSP-only analysis on Mac); code-signing + notarisation for a warning-free
   install; actually building the Mac binaries (no Mac in this project — use the
   friend's Mac or the GitHub Actions macOS runner).
@@ -143,16 +143,16 @@ verified feature per session, same as #1.
   (`applyChatMessage`), so one Undo reverts the whole change. A/B slots
   auto-clone on first divergence. Factory presets = partial natural-unit
   overrides applied on top of `defaults()` (via convertTo0to1). User presets =
-  `<userAppData>/VocalForge/Presets/*.vfpreset` (flat XML of normalised values;
+  `<userAppData>/VoxBrain/Presets/*.vbpreset` (flat XML of normalised values;
   unspecified params reset to default on load). `onStateChanged` → UI refresh.
   All message-thread. NOTE: chat now routes through `processor.applyChatMessage`
   (not ChatEngine directly) so undo is captured — keep that path.
 - `Update/UpdateChecker.*` (#12) — cross-platform (Win+mac) auto-update client,
   a `juce::Thread`. On load (throttled ≤ once/4h via `update.check` stamp file)
-  it fetches `VOCALFORGE_UPDATE_URL` via `juce::URL` (WinINet/NSURL — no curl;
+  it fetches `VOXBRAIN_UPDATE_URL` via `juce::URL` (WinINet/NSURL — no curl;
   sends a `User-Agent` header, required by GitHub), semver-compares to
-  `VOCALFORGE_VERSION`, and silently downloads the platform installer to
-  `<appdata>/VocalForge/Updates`, verifying SHA-256 (juce_cryptography) when
+  `VOXBRAIN_VERSION`, and silently downloads the platform installer to
+  `<appdata>/VoxBrain/Updates`, verifying SHA-256 (juce_cryptography) when
   provided. **Auto-detects two manifest formats**: GitHub Releases API
   (`hasProperty("tag_name")` → tag_name/body/html_url + picks the `.exe`/`.pkg`
   from `assets[]`) or a self-hosted appcast.json (version/notes/windows|macos).
@@ -165,7 +165,7 @@ verified feature per session, same as #1.
   — user closes the DAW to apply. Both defines live in CMakeLists; the URL is a
   `YOUR-DOMAIN` placeholder and the updater NO-OPs until it's set (no phoning
   home by default). Server side: `update-server/` (appcast.json + README),
-  `Scripts/publish_update.ps1`, `installer/vocalforge.iss` (Inno Setup).
+  `Scripts/publish_update.ps1`, `installer/voxbrain.iss` (Inno Setup).
 - `UI/` — dark glass theme (`theme::` colors), SpectrumDisplay (lock-free FIFO
   from analysis), ModuleStrip (11 cards in TWO weighted rows, knobs + combo
   support), AnalysisPanel (preset name + report + chat input), PresetBar (P6:
@@ -183,8 +183,8 @@ verified feature per session, same as #1.
 - ONNX Runtime 1.20.1: pre-downloaded by the ps1 with curl.exe into
   `ThirdParty/onnxruntime-win-x64-1.20.1.zip` (CMake's downloader failed
   silently); CMakeLists prefers the local zip.
-- **`/DELAYLOAD:onnxruntime.dll` MUST be set on VocalForge_VST3 and
-  VocalForge_Standalone targets** — on the shared-code static lib it is
+- **`/DELAYLOAD:onnxruntime.dll` MUST be set on VoxBrain_VST3 and
+  VoxBrain_Standalone targets** — on the shared-code static lib it is
   silently dropped → hard import → plugin fails to load (error 193 via wrong
   DLL on PATH). Also **`ORT_API_MANUAL_INIT`** before including
   onnxruntime_cxx_api.h (else static init fires the delay-load at DLL load,
@@ -194,16 +194,16 @@ verified feature per session, same as #1.
 - `COPY_PLUGIN_AFTER_BUILD FALSE` — the ps1 installs to
   `C:\Program Files\Common Files\VST3` with a UAC elevation prompt instead
   (plain copy is Permission denied).
-- Post-build copies onnxruntime.dll + `Models/` → `VocalForgeModels/` into the
+- Post-build copies onnxruntime.dll + `Models/` → `VoxBrainModels/` into the
   .vst3 bundle and next to the Standalone exe.
 - `/arch:AVX2` is on → needs 2014+ CPUs.
 - `Scripts\package_plugin.bat` → verified shareable zip with INSTALL.txt.
 - `Scripts\diagnose.bat` → writes environment report to `diag.txt`.
-- **Cross-platform / macOS** (scaffolded): `FORMATS` = `${VF_FORMATS}` (VST3 +
+- **Cross-platform / macOS** (scaffolded): `FORMATS` = `${VB_FORMATS}` (VST3 +
   Standalone everywhere, + AU on Apple). AVX2 is guarded — `/arch:AVX2` on MSVC,
   `-mavx2` only on x86 Linux and on Apple ONLY for a pure `x86_64` slice (genex
   on `CMAKE_OSX_ARCHITECTURES`) so Apple-Silicon/universal builds never get it.
-  ONNX/CREPE stays Windows-only (`VF_HAS_ONNX=0` elsewhere → DSP-only analysis;
+  ONNX/CREPE stays Windows-only (`VB_HAS_ONNX=0` elsewhere → DSP-only analysis;
   CrepeAnalyzer.cpp verified to compile with it off). `juce_cryptography` linked
   for update SHA-256. Mac build: `Scripts/build_macos.sh` (Xcode, universal) →
   `Scripts/package_macos.sh <ver>` (pkgbuild .pkg, optional codesign/notarize).

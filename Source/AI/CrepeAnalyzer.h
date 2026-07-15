@@ -14,8 +14,8 @@ namespace vf
 //  drift measurement. The real-time retune path stays DSP (latency).
 //
 //  Model file: crepe-tiny.onnx, searched in
-//    1. <plugin binary dir>/VocalForgeModels/
-//    2. <user app data>/VocalForge/Models/
+//    1. <plugin binary dir>/VoxBrainModels/
+//    2. <user app data>/VoxBrain/Models/
 //  If absent or ONNX Runtime fails to load, isAvailable() returns false and
 //  the caller falls back to the DSP analysis — the plugin never breaks.
 // ============================================================================
