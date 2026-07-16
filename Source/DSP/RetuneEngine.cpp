@@ -1,6 +1,7 @@
 #include "RetuneEngine.h"
 #include <cmath>
 #include <algorithm>
+#include <initializer_list>
 
 namespace vf
 {
@@ -52,6 +53,8 @@ void RetuneEngine::reset()
     currentF0 = 0.0f;  f0Confidence = 0.0f;
     smoothedPeriod = (float) fs / 200.0f;
     octaveJumpCount = 0;
+    f0Hist[0] = f0Hist[1] = f0Hist[2] = 0.0f;
+    f0HistPos = 0;  histPrimed = false;  f0Center = 0.0f;
     voicedState = false;
     unvoicedHops = 0;
     nextGrainOut = 1.0;
@@ -72,9 +75,40 @@ void RetuneEngine::pushAnalysis (float sample)
         return;
 
     anaFill = 0;
-    const float f0 = runYin();
+    const float f0raw = runYin();
+
+    // Median-of-3 outlier rejection over VOICED estimates only. Unvoiced frames
+    // (f0raw == 0) must NOT enter the history — otherwise a single consonant/
+    // breath zero pollutes the next two medians and yanks the corrected pitch,
+    // which is heard as choppiness/glitches on transitions. On a fresh note
+    // onset we prime all three slots so the very first voiced frame is stable.
+    float f0;
+    if (f0raw > 0.0f)
+    {
+        if (! histPrimed)
+        {
+            f0Hist[0] = f0Hist[1] = f0Hist[2] = f0raw;
+            histPrimed = true;
+        }
+        else
+        {
+            f0Hist[f0HistPos] = f0raw;
+            f0HistPos = (f0HistPos + 1) % 3;
+        }
+        const float a = f0Hist[0], b = f0Hist[1], c = f0Hist[2];
+        f0 = std::max (std::min (a, b), std::min (std::max (a, b), c));
+    }
+    else
+    {
+        f0 = 0.0f;             // unvoiced this frame — leave the history untouched
+        histPrimed = false;    // re-prime cleanly when the next note starts
+    }
     currentF0 = f0;
     uiInHz.store (f0);
+
+    // Slow pitch centre (for humanize) — slower than vibrato so it tracks the note.
+    if (f0 > 0.0f)
+        f0Center = f0Center > 0.0f ? 0.97f * f0Center + 0.03f * f0 : f0;
 
     if (f0 > 0.0f)
     {
@@ -177,6 +211,29 @@ float RetuneEngine::runYin()
 // ============================================================================
 //  Scale quantizer
 // ============================================================================
+int RetuneEngine::scaleMaskFor (int scaleType, const RetuneParams& p)
+{
+    auto build = [] (std::initializer_list<int> pcs)
+    { int m = 0; for (int x : pcs) m |= (1 << x); return m; };
+
+    switch (scaleType)
+    {
+        case 1: return build ({ 0, 2, 4, 5, 7, 9, 11 });   // Major
+        case 2: return build ({ 0, 2, 3, 5, 7, 8, 10 });   // Natural minor
+        case 3: return build ({ 0, 2, 3, 5, 7, 8, 11 });   // Harmonic minor
+        case 4: return build ({ 0, 2, 3, 5, 7, 9, 10 });   // Dorian
+        case 5: return build ({ 0, 2, 4, 5, 7, 9, 10 });   // Mixolydian
+        case 6: return build ({ 0, 1, 3, 5, 7, 8, 10 });   // Phrygian
+        case 7: return build ({ 0, 2, 4, 7, 9 });          // Major pentatonic
+        case 8: return build ({ 0, 3, 5, 7, 10 });         // Minor pentatonic
+        case 9: return build ({ 0, 3, 5, 6, 7, 10 });      // Blues
+        default: break;                                    // 0 → legacy
+    }
+    if (! p.chromatic && p.keyRoot >= 0)
+        return p.majorScale ? majorMask : minorMask;
+    return 0xFFF;
+}
+
 float RetuneEngine::quantizeTargetHz (float inputHz, const RetuneParams& p) const
 {
     if (inputHz <= 0.0f)
@@ -184,13 +241,8 @@ float RetuneEngine::quantizeTargetHz (float inputHz, const RetuneParams& p) cons
 
     const float midi = 69.0f + 12.0f * std::log2 (inputHz / 440.0f);
 
-    int mask = 0xFFF;
-    int root = 0;
-    if (! p.chromatic && p.keyRoot >= 0)
-    {
-        mask = p.majorScale ? majorMask : minorMask;
-        root = p.keyRoot;
-    }
+    const int mask = scaleMaskFor (p.scaleType, p);
+    const int root = p.keyRoot >= 0 ? p.keyRoot : 0;
 
     const int centre = (int) std::round (midi);
     int   bestNote = centre;
@@ -222,7 +274,7 @@ float RetuneEngine::readRing (int channel, double absPos) const
 }
 
 void RetuneEngine::fireGrain (double grainCentreOut, double sourceCentreAbs,
-                              int periodSamples, long long nowAbs)
+                              int periodSamples, long long nowAbs, double formantRatio)
 {
     const int mask = ringSize - 1;
     const double P = (double) periodSamples;
@@ -242,8 +294,12 @@ void RetuneEngine::fireGrain (double grainCentreOut, double sourceCentreAbs,
         const float w = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi
                                                 * ((float) d + (float) P) * invP);
         const auto outIdx = (size_t) (t & mask);
+        // Formant shift: resample the grain content around its centre. The
+        // window stays in the output domain, so pitch (grain spacing) is
+        // untouched while the spectral envelope (formants) scales.
+        const double srcOff = d * formantRatio;
         for (int c = 0; c < channels; ++c)
-            olaBuf[(size_t) c][outIdx] += w * readRing (c, sourceCentreAbs + d);
+            olaBuf[(size_t) c][outIdx] += w * readRing (c, sourceCentreAbs + srcOff);
         winSum[outIdx] += w;
     }
 }
@@ -260,6 +316,11 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
     const float glide = p.speedMs <= 0.5f
                       ? 0.0f
                       : std::exp (-1.0f / ((float) fs * p.speedMs * 0.001f));
+
+    const float  humanize     = juce::jlimit (0.0f, 1.0f, p.humanize);
+    const float  formantSemis = juce::jlimit (-5.0f, 5.0f, p.formant);
+    const double formantRatio = std::pow (2.0, (double) formantSemis / 12.0);
+    const double formantSpan  = std::max (1.0, formantRatio);   // for availability clamp
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -282,14 +343,25 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
         if (p.on)
         {
             // 3. Correction ratio (cents domain, glided)
+            //    Humanize: quantize a centre that blends the instantaneous pitch
+            //    (hard-tune, snaps the current note) with the slow pitch centre
+            //    (musical, note-stable), then re-add the natural deviation around
+            //    it scaled by `humanize` so vibrato/scoops survive.
             float targetCents = 0.0f;
             if (voicedState && currentF0 > 0.0f)
             {
-                const float targetHz = quantizeTargetHz (currentF0, p);
-                uiTargetHz.store (targetHz);
-                if (targetHz > 0.0f)
+                const float centreHz = (f0Center > 0.0f)
+                                     ? currentF0 * (1.0f - humanize) + f0Center * humanize
+                                     : currentF0;
+                const float snapHz = quantizeTargetHz (centreHz, p);
+                uiTargetHz.store (snapHz);
+                if (snapHz > 0.0f)
+                {
+                    const float vibRatio = currentF0 / juce::jmax (1.0f, centreHz);
+                    const float desiredHz = snapHz * std::pow (vibRatio, humanize);
                     targetCents = juce::jlimit (-700.0f, 700.0f,
-                                    1200.0f * std::log2 (targetHz / currentF0) * p.amount);
+                                    1200.0f * std::log2 (desiredHz / currentF0) * p.amount);
+                }
             }
             else
             {
@@ -330,10 +402,10 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                     gridValid = voicedState;
                 }
 
-                // Availability: the grain reads src ± P which must exist
-                src = juce::jmin (src, (double) n - (double) P);
+                // Availability: the grain reads src ± P·formantSpan which must exist
+                src = juce::jmin (src, (double) n - (double) P * formantSpan);
 
-                fireGrain (nextGrainOut, src, P, n);
+                fireGrain (nextGrainOut, src, P, n, formantRatio);
                 lastSourceCentre = src;
                 nextGrainOut += (double) P / (double) juce::jmax (0.5f, currentRatio);
             }

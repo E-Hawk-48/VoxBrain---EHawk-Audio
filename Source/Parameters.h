@@ -15,9 +15,11 @@ namespace vf::param
     // ---- Pitch correction ---------------------------------------------------
     inline constexpr auto pitchOn     = "pitch_on";
     inline constexpr auto pitchKey    = "pitch_key";     // choice: Auto, C…B
-    inline constexpr auto pitchScale  = "pitch_scale";   // choice: Auto, Chromatic, Major, Minor
+    inline constexpr auto pitchScale  = "pitch_scale";   // choice: Auto, Chromatic, Major, Minor, …
     inline constexpr auto pitchSpeed  = "pitch_speed";   // retune ms (0 = hard)
     inline constexpr auto pitchAmount = "pitch_amount";  // %
+    inline constexpr auto pitchHumanize = "pitch_humanize"; // % preserve vibrato
+    inline constexpr auto pitchFormant  = "pitch_formant";  // semitones formant shift
 
     // ---- Gate / Expander ---------------------------------------------------
     inline constexpr auto gateOn        = "gate_on";

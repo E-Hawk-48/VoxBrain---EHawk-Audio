@@ -123,6 +123,39 @@ verified feature per session, same as #1.
   this caused "choppy" bugs, fixed). Fixed latency ~32 ms reported to host;
   bypass still delays dry so toggling never shifts timing. Grains must never
   write behind the emission point (stale-slot crackle bug, fixed).
+  UPGRADE (verified): (1) 10 scales via `scaleMaskFor` + `RetuneParams.scaleType`
+  (Chromatic, Major, Nat/Harm Minor, Dorian, Mixolydian, Phrygian, Maj/Min
+  Pentatonic, Blues) — the Scale menu now has all of them, mapped in
+  readChainParams. (2) `humanize` (pitch_humanize %): quantizes a blend of the
+  instantaneous pitch and a slow pitch centre (f0Center EMA, slower than
+  vibrato), then re-adds the natural deviation scaled by humanize → hard-tune at
+  0, vibrato-preserving at 1. (3) `formant` (pitch_formant, ±5 st): grain content
+  resampled around its centre in fireGrain (window stays output-domain) → shifts
+  the spectral envelope while pitch stays put; availability clamp widened by
+  formantSpan. (4) Better tracking: median-of-3 over VOICED-only YIN estimates
+  (unvoiced zeros are NOT pushed into the history — that pollution glitched the
+  pitch on consonant transitions = the "choppy/glitchy" bug; primed on note
+  onset, `histPrimed`). VERIFIED: offline glitch test — a continuous tone stays
+  continuous (out sample-jump 0.029 = natural) and faded voiced/unvoiced
+  transitions add ZERO discontinuity; plus 445 Hz→440 (A4) chromatic snap,
+  off-scale note→nearest C-major tone, all scales/humanize/formant finite,
+  bypass + latency intact.
+- `UI/PitchDisplay.*` — live auto-tune visualizer (30 Hz): scrolling detected
+  (dim) vs corrected (accent) pitch traces on a semitone grid with C-octave
+  labels + a big current-note read-out. Reads RetuneEngine's lock-free
+  getInputPitchHz/getTargetPitchHz. Sits between the spectrum and preset bar
+  (120 px strip). Compiles clean vs JUCE.
+- GENRE-AWARE BRAIN (verified): `AutoMixBrain` now infers a vocal Style
+  (`inferStyle`: Rap/Pop/R&B/Rock/Ballad/Spoken from voicedRatio + pitch
+  stability + crest + brightness — no tempo needed) and biases the chain toward
+  it: retune speed/amount + the new `pitch_humanize` (Pop/Rap tight, R&B/Ballad/
+  Rock keep vibrato), reverb type/size/mix + delay (later same-param decisions
+  override the generic ones), and saturation. Style shows in the preset name +
+  report. VERIFIED: 8/8 style-classification cases correct; AutoMixBrain.cpp
+  object-compiles vs JUCE. Implemented rack modules now number 24 (added
+  `SpaceModules.*`: Hall Reverb [juce::dsp::Reverb], Digital Delay [tone+fb],
+  Ping-Pong Delay [cross-feed], Doubler [detuned L/R short delays] — all
+  runtime-verified finite through their tails).
 - `Brain/AutoMixBrain.*` — pure function `AnalysisSnapshot → decisions +
   rationale strings + generated preset name`. Encodes real engineering rules
   (gain-stage to -18 dB RMS, gate 6 dB above noise floor, mud cut, brightness-
@@ -136,6 +169,15 @@ verified feature per session, same as #1.
 - `Chat/ChatEngine.*` — data-driven rule table: synonyms → param deltas/macros,
   intensity ("slightly"=0.5×, "way"=1.7×), negation ("less/too/remove"),
   longest-synonym-first matching. Applied via APVTS (automation-visible).
+  EXPANDED (verified compile): new auto-tune controls ("more human"/"humanize"
+  → pitch_humanize; "deeper/higher voice", "chipmunk" → pitch_formant; "minor
+  key"/"harmonic minor"/"pentatonic"/"blues" → pitch_scale index; "robotic tune"
+  → hard-lock); richer natural phrases ("make it pop"/"3d", "tuck it back",
+  "thin", "de-breath", "double it"); and GENRE one-shot presets (absolute
+  multi-param): "rap"/"trap", "drill", "pop vocal", "rnb"/"neo soul", "rock",
+  "country"/"folk", "gospel". Genre presets set eq/comp/deess/sat/pitch/reverb
+  targets in one command. (Genre here = user-driven chat presets; a genre-aware
+  LEARN brain that auto-detects style is a future step.)
 - `Preset/PresetManager.*` (P6) — session workflow layer over the APVTS.
   Snapshots = `map<paramID, normalised 0..1>` (round-trips every param type via
   getValue/setValueNotifyingHost). Undo/redo stacks (cap 32): processor calls
@@ -147,6 +189,42 @@ verified feature per session, same as #1.
   unspecified params reset to default on load). `onStateChanged` → UI refresh.
   All message-thread. NOTE: chat now routes through `processor.applyChatMessage`
   (not ChatEngine directly) so undo is captured — keep that path.
+- PRESET ECOSYSTEM (new — `Preset/PresetMeta.*`, `PresetApply.cpp`,
+  `PresetMorph.*`, `FactoryPresetLibrary.*`, `AiPresetGenerator.*`,
+  `PresetLibrary.*`, `Marketplace.h`). Layers on top of PresetManager without
+  changing it. `PresetMeta` = rich first-class metadata (id/creator/version/
+  compat/genre/mood/energy/vocal type/mic+rec recs/cpu+latency est/tags/AI
+  confidence+summary/downloads/likes/rating/featured/contentHash/signature).
+  `Preset` = meta + sparse NATURAL-unit `values` + optional rack XML; `.vbpreset`
+  v2 = `<VoxBrainPreset><Meta/><Values/><Rack/></>`. SECURITY: SHA-256
+  `computeContentHash` (juce_cryptography) → `seal()`/`verifyIntegrity()` (tamper
+  detection), duplicate detection by hash, safe XmlDocument parse, semver
+  `compareVersions`/`compatibleWith`. The APVTS glue (`captureFrom`/`applyTo`)
+  lives in `PresetApply.cpp` so `PresetMeta.cpp` stays pure (juce_core+crypto)
+  and unit-testable. `FactoryPresetLibrary::build()` = 130 presets across 26
+  genres (Clean/Broadcast/Podcast/Pop/Hip-Hop/Trap/Emo Trap/Hyperpop/R&B/Rock/
+  Country/EDM/Lo-Fi/Metal/Gospel/Cinematic/…) from per-genre templates ×5
+  variations + 10 official Collections. `AiPresetGenerator::generate(snapshot)`
+  wraps AutoMixBrain → a complete AI preset (detected genre, confidence, plain-
+  language summary). `PresetMorph` blends presets (A→B slider + weighted multi).
+  `PresetLibrary` = fast in-memory index: fuzzy search (name/creator/genre/tags/
+  mood), filters (genre/mood/creator/rating/cpu/source/ai/verified/official/
+  favorites), sorts (relevance/name/newest/downloads/rating/trending), favorites,
+  collections, discovery (trending/mostDownloaded/highestRated/newArrivals/
+  editorsPicks/recommendedFor). `Marketplace.h` = abstract `MarketplaceClient`
+  (discover/search/fetch/creators/ratings/reviews/report/upload + premium seams,
+  no payments) + offline-first `LocalMarketplace` over a PresetLibrary — a real
+  server implements the SAME interface and drops in unchanged. Processor wires
+  it: `presetLibrary` member loaded with the factory library at ctor;
+  `getPresetLibrary()`, `generateAiPreset()`, `captureCurrentAsPreset()`,
+  `applyPreset()` (pushes undo, restores params + rack). VERIFIED: all 6 TUs
+  object-compile vs JUCE; the integration-API probe compiles vs full JUCE;
+  runtime tests — metadata round-trip/hash/tamper/dup/version (16), factory
+  130+morph (23), library search/filter/sort/favorites/collections/discovery +
+  AI-gen + LocalMarketplace upload-validation/creator/ratings (29) — ALL PASS.
+  NEXT PHASE: the Preset Browser UI (grid/list, discovery views, creator pages,
+  morph slider) and a real networked backend behind the same MarketplaceClient
+  interface (cloud sync of favorites/collections/uploads).
 - `Update/UpdateChecker.*` (#12) — cross-platform (Win+mac) auto-update client,
   a `juce::Thread`. On load (throttled ≤ once/4h via `update.check` stamp file)
   it fetches `VOXBRAIN_UPDATE_URL` via `juce::URL` (WinINet/NSURL — no curl;
@@ -212,11 +290,29 @@ verified feature per session, same as #1.
   refreshed after each LEARN; implemented suggestions insert on click, roadmap
   ones show "(soon)". VERIFIED: RackView.cpp + PluginEditor.cpp + the updated
   PluginProcessor.cpp all syntax-compile vs JUCE + all project headers, and
-  RackView.cpp object-compiles clean. NEXT: fill in more module factories
-  category by category, drag-to-reorder (currently ▲▼), let the advisor insert
-  + pre-configure automatically, per-module custom editors, and the
-  marketplace/module-package layer. The fixed VocalChain stays as the default/AI
-  path; the rack is the "advanced modular" layer.
+  RackView.cpp object-compiles clean.
+  IMPLEMENTED MODULES (20 total now — every advisor suggestion is creatable):
+  `BuiltinModules.*` (8: Gain, Trim, Phase Flip, Stereo Width, Mono Maker,
+  Highpass, Lowpass, Tube Sat) + `DynamicsModules.*` (Compressor, Gate/Expander,
+  Parallel Comp, Limiter, Soft Clipper — plus Restoration: De-Esser, De-Plosive,
+  Noise Reduction; all share a branching `EnvFollower`) + `ToneModules.*`
+  (Parametric Vocal EQ 4-band, Dynamic EQ ducker, Exciter) + `ModulationModules.*`
+  (Stereo Chorus). Every new module is RT-safe, ≤6 params (so all knobs are
+  macro-automatable), and had its factory moved from plan()→registerType() in
+  ModuleCatalog (dup roadmap entries removed). VERIFIED: all module TUs
+  object-compile vs JUCE; runtime smoke test — create/prepare/process finite for
+  all 12, plus directional checks (limiter caps at ceiling, compressor reduces,
+  gate attenuates quiet, soft-clip bounds hot input) — ALL PASS.
+  AI ENGINEER — auto-insert (done): RackView has a "✨ Auto-Build" button
+  (`autoBuild()`) that constructs a full rack — a proven default front-end
+  (gate→de_plosive→de_esser→parametric_eq→compressor→dynamic_eq) plus any
+  implemented advisor suggestions from `suggestModules()`, de-duplicated via
+  `hasType()`, then `syncMacros()`. NEXT (AI Engineer, still pending): genre-aware
+  brain moves + richer ChatEngine vocabulary; and the auto-tune upgrade
+  (better pitch tracking, smarter key/scale, formant preservation, tighter
+  hard-tune + humanize). Also: creative/space + pitch rack modules, drag-to-
+  reorder, per-module editors, marketplace. The fixed VocalChain stays as the
+  default/AI path; the rack is the "advanced modular" layer.
 - `UI/` — dark glass theme (`theme::` colors), SpectrumDisplay (lock-free FIFO
   from analysis), ModuleStrip (11 cards in TWO weighted rows, knobs + combo
   support), AnalysisPanel (preset name + report + chat input), PresetBar (P6:
@@ -224,6 +320,17 @@ verified feature per session, same as #1.
   LEARN button, and RackView (the modular-workstation overlay — see Modules
   above; toggled by the header MODULES button). Editor default 1120×800.
   PresetBar's Save uses an async AlertWindow (deleteWhenDismissed) name prompt.
+  UI POLISH (verified): `VoxBrainLookAndFeel` refreshed — rotary knobs now have a
+  gradient value arc + soft glow + domed radial-gradient cap + glowing pointer
+  tip; buttons are glassy vertical gradients with a top highlight; toggle pills
+  gradient-fill when on; ComboBox/PopupMenu themed. This lifts the whole plugin
+  AND the mixer at once. Editor `paint` adds a vertical gradient backdrop, a
+  header bar with an accent underline, and an accent-dot logo. Rack polish:
+  `RackModuleCard` is now drag-to-reorder (drag the card body; the card follows
+  the mouse, commits `rack.moveModule` on drop, and the rebuild is deferred via
+  `MessageManager::callAsync` + `SafePointer` so a card is never deleted inside
+  its own mouseUp). ▲▼ buttons remain. All verified: LookAndFeel.cpp object-
+  compiles; RackView.cpp + PluginEditor.cpp syntax-compile vs JUCE.
 
 ## Build system — CRITICAL knowledge (each item was a real failure)
 

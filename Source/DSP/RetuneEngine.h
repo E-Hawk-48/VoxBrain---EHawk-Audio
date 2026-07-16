@@ -31,10 +31,15 @@ struct RetuneParams
 {
     bool  on          = false;
     int   keyRoot     = -1;      // 0=C … 11=B, -1 = chromatic (no key)
-    bool  majorScale  = true;    // ignored when keyRoot < 0
-    bool  chromatic   = true;    // quantize to all 12 semitones
+    bool  majorScale  = true;    // legacy: used only when scaleType < 0
+    bool  chromatic   = true;    // legacy: quantize to all 12 semitones
+    int   scaleType   = 0;       // 0=Chromatic,1=Major,2=NatMinor,3=HarmMinor,
+                                 // 4=Dorian,5=Mixolydian,6=Phrygian,7=MajPentatonic,
+                                 // 8=MinPentatonic,9=Blues (overrides chromatic/major)
     float speedMs     = 60.0f;   // retune glide time (0 = hard tune)
     float amount      = 1.0f;    // 0..1 correction depth
+    float humanize    = 0.0f;    // 0..1 — preserve natural vibrato/expression
+    float formant     = 0.0f;    // semitones, formant shift (0 = natural/preserved)
 };
 
 class RetuneEngine
@@ -58,10 +63,11 @@ private:
 
     // ---- retune logic -------------------------------------------------------
     float quantizeTargetHz (float inputHz, const RetuneParams& p) const;
+    static int scaleMaskFor (int scaleType, const RetuneParams& p);
 
     // ---- resynthesis --------------------------------------------------------
     void fireGrain (double grainCentreOut, double sourceCentreAbs,
-                    int periodSamples, long long nowAbs);
+                    int periodSamples, long long nowAbs, double formantRatio);
     float readRing (int channel, double absPos) const;   // linear interp
 
     double fs = 44100.0;
@@ -85,6 +91,12 @@ private:
     float currentF0 = 0.0f, f0Confidence = 0.0f;
     float smoothedPeriod = 0.0f;                   // samples
     int   octaveJumpCount = 0;
+
+    // F0 median smoothing (outlier rejection) + slow centre for humanize
+    float f0Hist[3] { 0, 0, 0 };
+    int   f0HistPos = 0;
+    bool  histPrimed = false;                      // seed median on note onset
+    float f0Center = 0.0f;                         // slow-moving pitch centre
 
     // Voicing decision with hysteresis (updated per hop)
     bool voicedState = false;

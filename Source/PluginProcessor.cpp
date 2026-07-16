@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "Modules/ModuleRegistry.h"
+#include "Preset/FactoryPresetLibrary.h"
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
 
@@ -16,6 +17,7 @@ VoxBrainProcessor::VoxBrainProcessor()
     // Cache raw parameter pointers for lock-free audio-thread access
     for (const char* id : { inputGain, outputGain,
                             pitchOn, pitchKey, pitchScale, pitchSpeed, pitchAmount,
+                            pitchHumanize, pitchFormant,
                             gateOn, gateThreshold,
                             eqOn, eqHpfFreq, eqLowShelfGain, eqMudGain, eqMudFreq,
                             eqPresenceGain, eqPresenceFreq, eqAirGain,
@@ -44,6 +46,9 @@ VoxBrainProcessor::VoxBrainProcessor()
         for (int m = 0; m < mods::ModuleRack::Automation::Macros; ++m)
             rackMacroPtr[s][m] = apvts.getRawParameterValue (
                 "rack_s" + juce::String (s) + "_m" + juce::String (m));
+
+    // Load the built-in factory preset library into the ecosystem index.
+    presetLibrary.addAll (FactoryPresetLibrary::build());
 
     learn16k.resize ((size_t) learn16kCapacity, 0.0f);   // preallocated: no RT alloc
     startTimerHz (10);   // message-thread poll for finished learn passes
@@ -113,17 +118,26 @@ ChainParams VoxBrainProcessor::readChainParams() const
         rp.amount   = v (pitchAmount) * 0.01f;
 
         const int keyChoice   = (int) v (pitchKey);     // 0=Auto, 1=C … 12=B
-        const int scaleChoice = (int) v (pitchScale);   // 0=Auto, 1=Chrom, 2=Maj, 3=Min
+        const int scaleChoice = (int) v (pitchScale);   // 0=Auto,1=Chrom,2=Maj,3=Min,…10=Blues
 
-        int  root  = keyChoice == 0 ? autoKeyRoot.load() : keyChoice - 1;
-        bool major = autoKeyMajor.load();
-        if (scaleChoice == 2) major = true;
-        if (scaleChoice == 3) major = false;
-
+        const int  root    = keyChoice == 0 ? autoKeyRoot.load() : keyChoice - 1;
+        const bool major   = (scaleChoice == 2) ? true
+                           : (scaleChoice == 3) ? false
+                           : autoKeyMajor.load();
         const bool haveKey = root >= 0;
-        rp.chromatic  = scaleChoice == 1 || ! haveKey;
+
+        // Map the Scale menu onto the engine's scaleType (0=Chromatic … 9=Blues).
+        int scaleType;
+        if      (scaleChoice == 0) scaleType = ! haveKey ? 0 : (major ? 1 : 2); // Auto
+        else if (scaleChoice == 1) scaleType = 0;                              // Chromatic
+        else                       scaleType = scaleChoice - 1;               // Major…Blues
+
+        rp.scaleType  = scaleType;
+        rp.chromatic  = scaleType == 0;
         rp.keyRoot    = haveKey ? root : -1;
         rp.majorScale = major;
+        rp.humanize   = v (pitchHumanize) * 0.01f;
+        rp.formant    = v (pitchFormant);
         p.retune = rp;
     }
 
@@ -300,6 +314,24 @@ juce::String VoxBrainProcessor::applyChatMessage (const juce::String& message)
 std::vector<mods::ModuleSuggestion> VoxBrainProcessor::suggestModules() const
 {
     return mods::ModuleAdvisor::suggest (lastSnapshot);
+}
+
+Preset VoxBrainProcessor::captureCurrentAsPreset()
+{
+    const auto rackX = rack.toXml();                 // include routing if any
+    return Preset::captureFrom (apvts, rackX.get());
+}
+
+void VoxBrainProcessor::applyPreset (const Preset& p)
+{
+    presets.pushUndo ("Preset: " + p.meta.name);     // revertible with one Undo
+    juce::XmlElement* rackXml = nullptr;
+    p.applyTo (apvts, &rackXml);                      // params (+ optional rack)
+    if (rackXml != nullptr)
+    {
+        rack.fromXml (rackXml);
+        delete rackXml;
+    }
 }
 
 bool VoxBrainProcessor::isModuleLocked (const juce::String& paramId) const

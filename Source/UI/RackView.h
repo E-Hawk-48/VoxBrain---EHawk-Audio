@@ -39,10 +39,17 @@ public:
     void resized() override;
     void setCpu (float pct);
 
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp   (const juce::MouseEvent&) override;
+
     static constexpr int cardHeight = 132;
 
     juce::String instanceId;
     std::function<void()> onRemove, onDuplicate, onMoveUp, onMoveDown, onChanged;
+    std::function<void()>    onDragStart;
+    std::function<void(int)> onDrag;      // dy from drag start
+    std::function<void(int)> onDragEnd;   // dy from drag start
 
 private:
     juce::AudioProcessorValueTreeState& apvts;
@@ -52,6 +59,7 @@ private:
     int   latency = 0;
     float cpu = 0.0f;
     bool  automatable = true;
+    bool  dragging = false;
 
     juce::TextButton upBtn { "▲" }, downBtn { "▼" }, dupBtn { "Dup" }, removeBtn { "✕" };
     juce::ToggleButton bypassBtn, soloBtn, lockBtn;
@@ -93,7 +101,10 @@ private:
     void rebuildCards();
     void layoutCards();
     void addModule (const juce::String& typeId);
+    void autoBuild();
+    bool hasType (const juce::String& typeId) const;
     void moveModule (const juce::String& instanceId, int dir);
+    void moveModuleTo (const juce::String& instanceId, int newIndex);
     void removeModule (const juce::String& instanceId);
     void duplicateModule (const juce::String& instanceId);
     void syncMacros();
@@ -105,6 +116,7 @@ private:
 
     juce::Label      titleLabel, paletteLabel, advisorLabel, statsLabel, emptyHint;
     juce::TextButton closeBtn { "Close ✕" };
+    juce::TextButton autoBuildBtn { "✨ Auto-Build" };
 
     // Palette (left column)
     juce::TextEditor searchBox;

@@ -7,6 +7,7 @@
 #include "UI/PresetBar.h"
 #include "UI/UpdateBanner.h"
 #include "UI/RackView.h"
+#include "UI/PitchDisplay.h"
 
 namespace vf
 {
@@ -39,6 +40,7 @@ private:
     juce::TextButton modulesButton { "MODULES" };
     UpdateBanner updateBanner;
     SpectrumDisplay spectrum;
+    PitchDisplay pitchDisplay;
     PresetBar presetBar;
     AnalysisPanel analysisPanel;
     ModuleStrip moduleStrip;

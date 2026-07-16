@@ -7,6 +7,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       spectrum (p.getAnalysis()),
+      pitchDisplay (p.getChain().getRetune()),
       presetBar (p.getPresets()),
       moduleStrip (p.apvts),
       rackView (p.apvts, p.getRack(), [&p] { return p.suggestModules(); })
@@ -25,6 +26,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     rackView.onClose = [this] { toggleRack(); };
     addChildComponent (updateBanner);   // shows itself only when an update is pending
     addAndMakeVisible (spectrum);
+    addAndMakeVisible (pitchDisplay);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (analysisPanel);
     addAndMakeVisible (moduleStrip);
@@ -110,15 +112,30 @@ void VoxBrainEditor::timerCallback()
 
 void VoxBrainEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::bg);
+    // Subtle vertical gradient backdrop for depth.
+    g.setGradientFill (juce::ColourGradient (theme::bg.brighter (0.03f), 0.0f, 0.0f,
+                                             theme::bg.darker (0.25f), 0.0f, (float) getHeight(), false));
+    g.fillAll();
+
+    // Header bar with an accent underline.
+    auto bar = getLocalBounds().removeFromTop (52);
+    g.setColour (theme::panel.withAlpha (0.6f));
+    g.fillRect (bar);
+    g.setColour (theme::accent);
+    g.fillRect (bar.removeFromBottom (2));
 
     auto header = getLocalBounds().removeFromTop (52).reduced (16, 0);
+    // accent dot
+    g.setColour (theme::accent);
+    g.fillEllipse ((float) header.getX(), header.getCentreY() - 4.0f, 8.0f, 8.0f);
+    header.removeFromLeft (16);
+
     g.setColour (theme::text);
     g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
     g.drawText ("VOXBRAIN", header, juce::Justification::centredLeft);
     g.setColour (theme::accent);
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("AI VOCAL ENGINEER", header.translated (170, 5), juce::Justification::centredLeft);
+    g.drawText ("AI VOCAL ENGINEER", header.translated (186, 5), juce::Justification::centredLeft);
 }
 
 void VoxBrainEditor::resized()
@@ -142,6 +159,7 @@ void VoxBrainEditor::resized()
     moduleStrip.setBounds (area.removeFromBottom (270));
     analysisPanel.setBounds (area.removeFromBottom (170).reduced (0, 4));
     presetBar.setBounds (area.removeFromBottom (36));
+    pitchDisplay.setBounds (area.removeFromBottom (120).reduced (0, 4));
     spectrum.setBounds (area.reduced (3, 4));
 }
 } // namespace vf

@@ -32,6 +32,9 @@ public:
     /** Pure function: snapshot in, complete chain decision out. */
     static Result computeChain (const AnalysisSnapshot& s);
 
+    /** The vocal style the brain infers from the analysis (Rap/Pop/R&B/…). */
+    static juce::String detectedStyle (const AnalysisSnapshot& s);
+
 private:
     static juce::String generatePresetName (const AnalysisSnapshot& s);
     static juce::String buildSummary (const AnalysisSnapshot& s, const std::vector<Decision>& d);

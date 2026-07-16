@@ -225,6 +225,115 @@ const std::vector<Rule>& rules()
           { { verbMix, 4.0f, false }, { verbSize, 8.0f, false }, { delayOn, 1.0f, true },
             { delayMix, 3.0f, false }, { pitchSpeed, 25.0f, false } },
           true, "More emotion: space, echo, gentler correction", "Tightened the sentiment" },
+
+        // ---- Auto-tune character (new engine controls) -------------------
+        { { "human", "humanize", "humanise", "natural vibrato", "preserve vibrato",
+            "less robotic", "keep vibrato" },
+          { { pitchOn, 1.0f, true }, { pitchHumanize, 35.0f, false } },
+          true, "More human — keeping your natural vibrato and pitch movement",
+          "More machine — tighter, less vibrato" },
+
+        { { "robotic tune", "robot voice", "perfect pitch", "locked tune", "rigid tune" },
+          { { pitchOn, 1.0f, true }, { pitchHumanize, 0.0f, true }, { pitchSpeed, 0.0f, true },
+            { pitchAmount, 100.0f, true } },
+          false, "Locked, machine-perfect tuning", "" },
+
+        { { "deeper voice", "lower voice", "masculine", "manly", "monster voice", "demon voice" },
+          { { pitchFormant, -3.0f, true } },
+          false, "Lowered the formants — a deeper, bigger voice", "" },
+
+        { { "higher voice", "chipmunk", "feminine voice", "younger voice", "helium", "lighter voice" },
+          { { pitchFormant, 3.0f, true } },
+          false, "Raised the formants — a brighter, lighter voice", "" },
+
+        { { "neutral voice", "natural voice", "reset voice", "normal voice" },
+          { { pitchFormant, 0.0f, true } },
+          false, "Reset to neutral voice character", "" },
+
+        { { "major key", "major scale" },
+          { { pitchOn, 1.0f, true }, { pitchScale, 2.0f, true } },
+          false, "Scale set to Major", "" },
+        { { "minor key", "minor scale" },
+          { { pitchOn, 1.0f, true }, { pitchScale, 3.0f, true } },
+          false, "Scale set to Minor", "" },
+        { { "harmonic minor" },
+          { { pitchOn, 1.0f, true }, { pitchScale, 4.0f, true } },
+          false, "Scale set to Harmonic Minor", "" },
+        { { "pentatonic" },
+          { { pitchOn, 1.0f, true }, { pitchScale, 9.0f, true } },
+          false, "Scale set to Minor Pentatonic", "" },
+        { { "blues scale", "bluesy tune" },
+          { { pitchOn, 1.0f, true }, { pitchScale, 10.0f, true } },
+          false, "Scale set to Blues", "" },
+
+        // ---- more natural production phrases ------------------------------
+        { { "thin", "thinner", "less body", "smaller voice" },
+          { { eqLowShelfGain, -2.0f, false }, { satMix, -4.0f, false } },
+          true, "Thinned the body", "Filled the body back in" },
+
+        { { "pop out", "make it pop", "3d", "three d", "depth", "dimension", "out front" },
+          { { eqPresenceGain, 1.5f, false }, { eqAirGain, 1.0f, false }, { satMix, 5.0f, false },
+            { compThreshold, -2.0f, false } },
+          true, "Pushed it out front with presence, air and drive", "Sat it back down" },
+
+        { { "background", "behind", "further back", "tuck", "sit back" },
+          { { verbMix, 4.0f, false }, { eqPresenceGain, -1.5f, false }, { limitGain, -1.5f, false } },
+          true, "Tucked it back into the mix", "Brought it forward" },
+
+        { { "de breath", "breaths", "less breath", "breathy noise" },
+          { { gateOn, 1.0f, true }, { gateThreshold, 6.0f, false } },
+          true, "Ducked the breaths with the gate", "Let the breaths through" },
+
+        { { "double", "doubled", "thicken vocal", "stack", "wide double" },
+          { { verbWidth, 12.0f, false }, { delayOn, 1.0f, true }, { delayTime, -180.0f, false },
+            { delayMix, 4.0f, false } },
+          true, "Faux-doubled for width and thickness", "Un-doubled" },
+
+        // ---- Genre one-shots (absolute presets) --------------------------
+        { { "rap", "trap", "hip hop", "hiphop" },
+          { { eqOn, 1.0f, true }, { eqHpfFreq, 90.0f, true }, { eqPresenceGain, 3.5f, true },
+            { compOn, 1.0f, true }, { compThreshold, -20.0f, true }, { compRatio, 4.0f, true },
+            { deessOn, 1.0f, true }, { satOn, 1.0f, true }, { satType, 0.0f, true }, { satMix, 25.0f, true },
+            { pitchOn, 1.0f, true }, { pitchScale, 3.0f, true }, { pitchSpeed, 20.0f, true }, { pitchAmount, 90.0f, true },
+            { delayOn, 1.0f, true }, { delayMix, 10.0f, true }, { verbMix, 8.0f, true } },
+          false, "Modern rap vocal: tight, present, up-front with a slap throw", "" },
+
+        { { "drill" },
+          { { eqOn, 1.0f, true }, { eqAirGain, -2.0f, true }, { compOn, 1.0f, true }, { compThreshold, -22.0f, true },
+            { pitchOn, 1.0f, true }, { pitchScale, 3.0f, true }, { pitchSpeed, 0.0f, true }, { pitchAmount, 100.0f, true },
+            { verbType, 0.0f, true }, { verbMix, 6.0f, true } },
+          false, "Drill vocal: dark, tight, hard-tuned", "" },
+
+        { { "pop vocal", "pop music", "radio pop", "mainstream pop" },
+          { { eqOn, 1.0f, true }, { eqAirGain, 3.0f, true }, { eqPresenceGain, 2.0f, true },
+            { deessOn, 1.0f, true }, { compOn, 1.0f, true }, { compThreshold, -18.0f, true }, { compRatio, 3.0f, true },
+            { pitchOn, 1.0f, true }, { pitchSpeed, 30.0f, true }, { pitchAmount, 90.0f, true },
+            { verbType, 2.0f, true }, { verbMix, 14.0f, true }, { verbWidth, 100.0f, true } },
+          false, "Polished pop vocal: bright, airy, wide, radio-ready", "" },
+
+        { { "rnb", "r and b", "r n b", "rhythm and blues", "neo soul" },
+          { { eqOn, 1.0f, true }, { eqLowShelfGain, 2.0f, true }, { eqAirGain, 2.0f, true },
+            { satOn, 1.0f, true }, { satType, 1.0f, true }, { satMix, 20.0f, true },
+            { pitchOn, 1.0f, true }, { pitchSpeed, 45.0f, true }, { pitchAmount, 70.0f, true }, { pitchHumanize, 40.0f, true },
+            { verbType, 1.0f, true }, { verbMix, 16.0f, true }, { verbWidth, 100.0f, true } },
+          false, "Smooth R&B vocal: warm, lush, wide with natural vibrato", "" },
+
+        { { "rock vocal", "rock", "grunge", "punk vocal" },
+          { { eqOn, 1.0f, true }, { eqPresenceGain, 3.0f, true }, { compOn, 1.0f, true }, { compThreshold, -20.0f, true },
+            { satOn, 1.0f, true }, { satType, 2.0f, true }, { satDrive, 40.0f, true }, { satMix, 35.0f, true },
+            { pitchOn, 0.0f, true }, { verbType, 0.0f, true }, { verbMix, 8.0f, true } },
+          false, "Rock vocal: driven, aggressive, raw", "" },
+
+        { { "country vocal", "country", "folk", "americana" },
+          { { eqOn, 1.0f, true }, { eqLowShelfGain, 1.0f, true }, { eqPresenceGain, 2.0f, true },
+            { deessOn, 1.0f, true }, { pitchOn, 1.0f, true }, { pitchSpeed, 80.0f, true }, { pitchAmount, 60.0f, true },
+            { pitchHumanize, 60.0f, true }, { verbType, 2.0f, true }, { verbMix, 12.0f, true } },
+          false, "Country/folk vocal: natural, warm and honest", "" },
+
+        { { "gospel", "choir vocal", "worship vocal" },
+          { { eqOn, 1.0f, true }, { eqAirGain, 2.5f, true }, { compOn, 1.0f, true }, { compThreshold, -18.0f, true },
+            { verbType, 1.0f, true }, { verbSize, 70.0f, true }, { verbMix, 22.0f, true }, { verbWidth, 100.0f, true } },
+          false, "Gospel vocal: big, lush, wide and uplifting", "" },
     };
     return r;
 }
@@ -356,9 +465,11 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
 
     if (matches.empty())
         return "I didn't catch a mixing move in that. Try things like: \"darker\", "
-               "\"more air\", \"less autotune\", \"hard tune\", \"warmer\", \"punchier\", "
-               "\"more reverb\", \"glue\", \"tame the resonance\", \"smoother\", "
-               "\"vintage\", \"radio ready\", \"telephone\", or \"reset\".";
+               "\"more air\", \"punchier\", \"warmer\", \"make it pop\", \"tuck it back\", "
+               "\"more human\", \"deeper voice\", \"minor key\", \"hard tune\", "
+               "\"more reverb\", \"glue\", \"tame the resonance\", \"double it\", "
+               "\"vintage\", \"radio ready\", or a genre like \"rap\", \"pop vocal\", "
+               "\"rnb\", \"rock\", \"drill\", \"gospel\" — or \"reset\".";
 
     // Apply and build the reply
     juce::StringArray replies;

@@ -6,6 +6,8 @@
 #include "Brain/AutoMixBrain.h"
 #include "AI/CrepeAnalyzer.h"
 #include "Preset/PresetManager.h"
+#include "Preset/PresetLibrary.h"
+#include "Preset/AiPresetGenerator.h"
 #include "Update/UpdateChecker.h"
 #include "Modules/ModuleRack.h"
 #include "Modules/ModuleAdvisor.h"
@@ -68,6 +70,15 @@ public:
     /** Module-level AI recommendations from the last LEARN pass (message thread). */
     std::vector<mods::ModuleSuggestion> suggestModules() const;
 
+    // ---- Preset ecosystem (factory + user + AI + community) --------------
+    PresetLibrary& getPresetLibrary() noexcept        { return presetLibrary; }
+    /** Build an AI preset from the last LEARN analysis (does not apply it). */
+    Preset generateAiPreset() const                   { return AiPresetGenerator::generate (lastSnapshot); }
+    /** Snapshot the current chain + rack into a shareable preset. */
+    Preset captureCurrentAsPreset();
+    /** Load a full preset (params + rack). Pushes undo so it's revertible. */
+    void applyPreset (const Preset& p);
+
     /** Last auto-mix result (message thread only). */
     const AutoMixBrain::Result& getLastResult() const noexcept { return lastResult; }
     std::function<void()> onAutoMixApplied;   // GUI callback
@@ -81,6 +92,7 @@ private:
     AnalysisEngine analysis;
     VocalChain     chain;
     PresetManager  presets { apvts };   // declared after apvts → constructed after it
+    PresetLibrary  presetLibrary;       // factory + user + AI + community index
     UpdateChecker  updater;
 
     // Modular rack (runs after the fixed chain; empty by default = passthrough).

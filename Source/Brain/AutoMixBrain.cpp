@@ -9,6 +9,46 @@ using namespace vf::param;
 namespace
 {
     float clampf (float v, float lo, float hi) { return juce::jlimit (lo, hi, v); }
+
+    // ------------------------------------------------------------------
+    //  Vocal-style inference — a lightweight genre classifier from the
+    //  LEARN features. It doesn't need tempo: delivery (voiced ratio +
+    //  pitch stability), dynamics (crest) and tone (brightness) separate
+    //  the common vocal idioms well enough to bias the chain toward them.
+    // ------------------------------------------------------------------
+    enum class Style { Rap, Pop, RnB, Rock, Ballad, Spoken };
+
+    Style inferStyle (const AnalysisSnapshot& s)
+    {
+        const float voiced = s.voicedRatio;
+        const float stab   = s.pitchStabilityCents;
+        const float crest  = s.crestDb;
+        const float bright = s.brightness;
+
+        // Rhythmic / talky delivery: little sustained pitch.
+        if (voiced < 0.35f)
+            return crest > 15.0f ? Style::Rap : Style::Spoken;
+
+        // Melodic deliveries:
+        if (crest > 18.0f && bright > 0.55f)          return Style::Rock;   // belted + bright + dynamic
+        if (stab < 25.0f && crest < 14.0f && voiced > 0.6f) return Style::Ballad; // steady, controlled
+        if (bright < 0.50f && voiced > 0.5f)          return Style::RnB;    // warm, sustained
+        return Style::Pop;                                                   // bright, modern default
+    }
+
+    const char* styleName (Style st)
+    {
+        switch (st)
+        {
+            case Style::Rap:    return "Rap";
+            case Style::Pop:    return "Pop";
+            case Style::RnB:    return "R&B";
+            case Style::Rock:   return "Rock";
+            case Style::Ballad: return "Ballad";
+            case Style::Spoken: return "Spoken";
+        }
+        return "Vocal";
+    }
 }
 
 // ============================================================================
@@ -24,6 +64,9 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     {
         r.decisions.push_back ({ id, v, std::move (why) });
     };
+
+    // Genre-aware: infer the vocal style once and bias the chain toward it.
+    const Style style = inferStyle (s);
 
     // ------------------------------------------------------------------
     // 1. GAIN STAGING — bring the vocal to a healthy internal level.
@@ -68,10 +111,26 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
         if (s.pitchStabilityCents > 45.0f)      { speed = 25.0f;  amount = 100.0f; }
         else if (s.pitchStabilityCents > 25.0f) { speed = 60.0f;  amount = 90.0f; }
         else                                    { speed = 110.0f; amount = 75.0f; }
+
+        // Genre bias: modern Pop/Rap tune tight; R&B/Ballad/Rock keep it human.
+        float humanize = 25.0f;
+        switch (style)
+        {
+            case Style::Rap:    speed = juce::jmin (speed, 20.0f); amount = 95.0f; humanize = 10.0f; break;
+            case Style::Pop:    speed = juce::jmin (speed, 45.0f); amount = 90.0f; humanize = 20.0f; break;
+            case Style::RnB:    speed = juce::jmax (speed, 60.0f); amount = 80.0f; humanize = 45.0f; break;
+            case Style::Ballad: speed = juce::jmax (speed, 90.0f); amount = 70.0f; humanize = 60.0f; break;
+            case Style::Rock:   speed = juce::jmax (speed, 120.0f); amount = 55.0f; humanize = 70.0f; break;
+            case Style::Spoken: break;
+        }
         add (pitchSpeed, speed,
-             juce::String ("Pitch drift ") + juce::String (s.pitchStabilityCents, 0)
-             + " cents — retune speed " + juce::String (speed, 0) + " ms.");
+             juce::String (styleName (style)) + " delivery, pitch drift "
+             + juce::String (s.pitchStabilityCents, 0) + " cents — retune speed "
+             + juce::String (speed, 0) + " ms.");
         add (pitchAmount, amount, "");
+        add (pitchHumanize, humanize,
+             humanize >= 40.0f ? "Preserving natural vibrato for an organic, human feel."
+                               : "Tight correction with a touch of humanization.");
     }
     else
     {
@@ -325,6 +384,43 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     add (verbHighCut, s.brightness > 0.55f ? 8000.0f : 10500.0f, "");
     add (verbModDepth, melodic ? 25.0f : 12.0f, "");
 
+    // Genre space bias — a later decision on the same param overrides the
+    // generic choice above, tailoring the space to the idiom.
+    switch (style)
+    {
+        case Style::Rap:
+            add (verbType, 0.0f, "Rap: a tight, dry room keeps the vocal right up front.");
+            add (verbMix, 7.0f, "");  add (verbSize, 30.0f, "");
+            add (delayTime, 110.0f, "Rap: short slap for rhythmic energy.");
+            add (delayMix, 9.0f, "");
+            break;
+        case Style::Pop:
+            add (verbType, 2.0f, "Pop: a bright plate for that polished, radio sheen.");
+            add (verbMix, 15.0f, "");
+            break;
+        case Style::RnB:
+            add (verbType, 1.0f, "R&B: a lush hall for a warm, spacious vocal.");
+            add (verbMix, 18.0f, "");  add (verbSize, 62.0f, "");  add (verbDecay, 60.0f, "");
+            break;
+        case Style::Ballad:
+            add (verbType, 1.0f, "Ballad: a big, long hall for emotional space.");
+            add (verbMix, 22.0f, "");  add (verbSize, 72.0f, "");
+            add (verbDecay, 68.0f, ""); add (verbPredelay, 30.0f, "");
+            break;
+        case Style::Rock:
+            add (verbType, 0.0f, "Rock: a short room so the vocal stays raw and driven.");
+            add (verbMix, 9.0f, "");  add (verbSize, 38.0f, "");
+            break;
+        case Style::Spoken:
+            add (verbMix, 5.0f, "Spoken word: minimal space for maximum clarity.");
+            break;
+    }
+
+    // Genre saturation bias.
+    if (style == Style::Rock)        { add (satDrive, 45.0f, "Rock: heavier drive for grit and attitude."); add (satMix, 40.0f, ""); }
+    else if (style == Style::Rap)    { add (satMix, 30.0f, "Rap: extra saturation for a thick, present tone."); }
+    else if (style == Style::Ballad) { add (satMix, 16.0f, "Ballad: light colour to stay clean and intimate."); }
+
     // ------------------------------------------------------------------
     // 8. LIMITER — final safety + loudness to roughly streaming-ready level.
     // ------------------------------------------------------------------
@@ -340,6 +436,12 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
 }
 
 // ============================================================================
+juce::String AutoMixBrain::detectedStyle (const AnalysisSnapshot& s)
+{
+    return styleName (inferStyle (s));
+}
+
+// ============================================================================
 juce::String AutoMixBrain::generatePresetName (const AnalysisSnapshot& s)
 {
     juce::String tone = s.brightness < 0.35f ? "Dark"
@@ -349,11 +451,7 @@ juce::String AutoMixBrain::generatePresetName (const AnalysisSnapshot& s)
     juce::String character = s.crestDb > 20.0f ? "Dynamic"
                            : s.crestDb > 14.0f ? "Expressive" : "Dense";
 
-    const bool melodic = s.voicedRatio > 0.45f && s.pitchStabilityCents < 60.0f;
-    juce::String style = melodic ? (s.brightness > 0.5f ? "Pop Vocal" : "Soul Vocal")
-                                 : (s.crestDb > 16.0f ? "Rap Vocal" : "Spoken Vocal");
-
-    return tone + " " + character + " " + style;
+    return tone + " " + character + " " + styleName (inferStyle (s)) + " Vocal";
 }
 
 // ============================================================================
@@ -362,6 +460,7 @@ juce::String AutoMixBrain::buildSummary (const AnalysisSnapshot& s,
 {
     juce::String out;
     out << "== VoxBrain Analysis ==\n";
+    out << "Detected style: " << styleName (inferStyle (s)) << " — chain tuned to match.\n";
     out << "Peak " << juce::String (s.peakDb, 1) << " dB | RMS " << juce::String (s.rmsDb, 1)
         << " dB | Crest " << juce::String (s.crestDb, 1) << " dB\n";
     out << "Integrated " << juce::String (s.integratedLufs, 1) << " LUFS | Noise floor "

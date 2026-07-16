@@ -1,4 +1,5 @@
 #include "RackView.h"
+#include <cmath>
 
 namespace vf
 {
@@ -127,6 +128,22 @@ RackModuleCard::RackModuleCard (juce::AudioProcessorValueTreeState& a,
 
 void RackModuleCard::setCpu (float pct) { cpu = pct; repaint (0, 0, getWidth(), 26); }
 
+// Drag the card body (not a control) to reorder. Children handle their own
+// clicks, so only presses on the card background start a drag.
+void RackModuleCard::mouseDown (const juce::MouseEvent&)
+{
+    dragging = true;
+    if (onDragStart) onDragStart();
+}
+void RackModuleCard::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging && onDrag) onDrag (e.getDistanceFromDragStartY());
+}
+void RackModuleCard::mouseUp (const juce::MouseEvent& e)
+{
+    if (dragging) { dragging = false; if (onDragEnd) onDragEnd (e.getDistanceFromDragStartY()); }
+}
+
 void RackModuleCard::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (2.0f);
@@ -244,6 +261,11 @@ RackView::RackView (juce::AudioProcessorValueTreeState& a,
     addAndMakeVisible (advisorLabel);
     addAndMakeVisible (advisorStrip);
 
+    autoBuildBtn.setColour (juce::TextButton::buttonColourId, theme::accentGreen.withAlpha (0.85f));
+    autoBuildBtn.setTooltip ("Build a full rack from the AI analysis (or a smart default chain).");
+    autoBuildBtn.onClick = [this] { autoBuild(); };
+    addAndMakeVisible (autoBuildBtn);
+
     emptyHint.setText ("Your rack is empty.\nSearch on the left and click a module to add it.",
                        juce::dontSendNotification);
     emptyHint.setJustificationType (juce::Justification::centred);
@@ -278,6 +300,41 @@ void RackView::addModule (const juce::String& typeId)
     rebuildCards();
 }
 
+bool RackView::hasType (const juce::String& typeId) const
+{
+    for (const auto& c : cards)
+        if (rack.indexOf (c->instanceId) >= 0)
+            for (const auto& n : rack.snapshot())
+                if (n.instanceId == c->instanceId && n.typeId == typeId)
+                    return true;
+    return false;
+}
+
+void RackView::autoBuild()
+{
+    // Prefer the AI's analysis-driven suggestions; fall back to a proven
+    // default vocal chain so the button always does something useful.
+    std::vector<juce::String> ids;
+    if (suggestFn)
+        for (const auto& s : suggestFn())
+            if (ModuleRegistry::instance().isImplemented (s.moduleId))
+                ids.push_back (s.moduleId);
+
+    // Always front the chain with clean-up + control, in signal-flow order.
+    static const char* base[] = { "gate", "de_plosive", "de_esser",
+                                  "parametric_eq", "compressor", "dynamic_eq" };
+    std::vector<juce::String> order;
+    for (auto* b : base) order.push_back (b);
+    for (const auto& s : ids) order.push_back (s);   // advisor extras after the core
+
+    for (const auto& id : order)
+        if (! hasType (id))
+            rack.addModule (id);
+
+    syncMacros();
+    rebuildCards();
+}
+
 void RackView::moveModule (const juce::String& instanceId, int dir)
 {
     const int idx = rack.indexOf (instanceId);
@@ -285,6 +342,16 @@ void RackView::moveModule (const juce::String& instanceId, int dir)
     if (idx < 0 || to < 0 || to >= rack.size()) return;
     rack.moveModule (instanceId, to);
     syncMacros();       // keep each module's sound after the slot shift
+    rebuildCards();
+}
+
+void RackView::moveModuleTo (const juce::String& instanceId, int newIndex)
+{
+    const int from = rack.indexOf (instanceId);
+    const int to   = juce::jlimit (0, rack.size() - 1, newIndex);
+    if (from < 0 || from == to) return;
+    rack.moveModule (instanceId, to);
+    syncMacros();
     rebuildCards();
 }
 
@@ -333,11 +400,36 @@ void RackView::rebuildCards()
     {
         auto card = std::make_unique<RackModuleCard> (apvts, rack, snap[(size_t) i], i);
         const auto iid = card->instanceId;
+        auto* raw = card.get();
         card->onRemove    = [this, iid] { removeModule (iid); };
         card->onDuplicate = [this, iid] { duplicateModule (iid); };
         card->onMoveUp    = [this, iid] { moveModule (iid, -1); };
         card->onMoveDown  = [this, iid] { moveModule (iid, +1); };
         card->onChanged   = [this] { updateStats(); };
+
+        // Drag-to-reorder: follow the mouse live, commit + rebuild on drop.
+        card->onDragStart = [raw] { raw->toFront (false); };
+        card->onDrag = [this, iid, raw] (int dy)
+        {
+            const int h = RackModuleCard::cardHeight;
+            const int idx = rack.indexOf (iid);
+            if (idx >= 0) raw->setBounds (0, idx * (h + 8) + dy, raw->getWidth(), h);
+        };
+        card->onDragEnd = [this, iid] (int dy)
+        {
+            const int h = RackModuleCard::cardHeight;
+            const int from = rack.indexOf (iid);
+            if (from >= 0)
+            {
+                const int to = juce::jlimit (0, rack.size() - 1,
+                    (int) std::round ((double) (from * (h + 8) + dy) / (double) (h + 8)));
+                if (to != from) { rack.moveModule (iid, to); syncMacros(); }
+            }
+            // Defer the rebuild so this card isn't deleted inside its own mouseUp.
+            juce::Component::SafePointer<RackView> sp (this);
+            juce::MessageManager::callAsync ([sp] { if (sp != nullptr) sp->rebuildCards(); });
+        };
+
         rackContent.addAndMakeVisible (*card);
         cards.push_back (std::move (card));
     }
@@ -450,7 +542,9 @@ void RackView::resized()
 
     area.removeFromLeft (16);   // gap past the separator
 
-    advisorLabel.setBounds (area.removeFromTop (18));
+    auto advHdr = area.removeFromTop (24);
+    autoBuildBtn.setBounds (advHdr.removeFromRight (120).reduced (0, 1));
+    advisorLabel.setBounds (advHdr);
     auto strip = area.removeFromTop (34);
     advisorStrip.setBounds (strip);
     // lay chips left→right within the strip

@@ -85,12 +85,22 @@ target_sources(VoxBrain PRIVATE
     Source/AI/CrepeAnalyzer.cpp
     Source/Chat/ChatEngine.cpp
     Source/Preset/PresetManager.cpp
+    Source/Preset/PresetMeta.cpp
+    Source/Preset/PresetApply.cpp
+    Source/Preset/PresetMorph.cpp
+    Source/Preset/FactoryPresetLibrary.cpp
+    Source/Preset/AiPresetGenerator.cpp
+    Source/Preset/PresetLibrary.cpp
     Source/Update/UpdateChecker.cpp
     Source/Modules/ModuleRegistry.cpp
     Source/Modules/ModuleRack.cpp
     Source/Modules/BuiltinModules.cpp
     Source/Modules/ModuleCatalog.cpp
     Source/Modules/ModuleAdvisor.cpp
+    Source/Modules/DynamicsModules.cpp
+    Source/Modules/ToneModules.cpp
+    Source/Modules/ModulationModules.cpp
+    Source/Modules/SpaceModules.cpp
     Source/UI/LookAndFeel.cpp
     Source/UI/SpectrumDisplay.cpp
     Source/UI/ModuleStrip.cpp
@@ -98,6 +108,7 @@ target_sources(VoxBrain PRIVATE
     Source/UI/PresetBar.cpp
     Source/UI/UpdateBanner.cpp
     Source/UI/RackView.cpp
+    Source/UI/PitchDisplay.cpp
 )
 
 target_include_directories(VoxBrain PRIVATE Source)

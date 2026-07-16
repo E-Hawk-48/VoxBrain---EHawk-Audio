@@ -41,9 +41,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                         "F#", "G", "G#", "A", "A#", "B" }, 0),
                 std::make_unique<juce::AudioParameterChoice> (
                     juce::ParameterID { pitchScale, 1 }, "Scale",
-                    juce::StringArray { "Auto", "Chromatic", "Major", "Minor" }, 0),
-                ms  (pitchSpeed,  "Retune Speed", 0.0f, 400.0f, 60.0f),
-                pct (pitchAmount, "Correction",   100.0f));
+                    juce::StringArray { "Auto", "Chromatic", "Major", "Minor",
+                                        "Harmonic Minor", "Dorian", "Mixolydian",
+                                        "Phrygian", "Major Pentatonic",
+                                        "Minor Pentatonic", "Blues" }, 0),
+                ms  (pitchSpeed,   "Retune Speed", 0.0f, 400.0f, 60.0f),
+                pct (pitchAmount,  "Correction",   100.0f),
+                pct (pitchHumanize,"Humanize",     0.0f),
+                std::make_unique<APF> (juce::ParameterID { pitchFormant, 1 }, "Formant",
+                                       Range { -5.0f, 5.0f, 0.1f }, 0.0f));
 
     // Gate
     layout.add (onOff (gateOn, "Gate", true),
