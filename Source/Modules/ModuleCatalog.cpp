@@ -4,6 +4,7 @@
 #include "ToneModules.h"
 #include "ModulationModules.h"
 #include "SpaceModules.h"
+#include "AnalogModules.h"
 
 // ============================================================================
 //  The module catalog. Implemented modules get a factory; the rest are
@@ -51,6 +52,13 @@ void registerBuiltInModules()
     r.registerType (ReverbModule::desc(),          [] { return std::make_unique<ReverbModule>(); });
     r.registerType (DelayModule::desc(),           [] { return std::make_unique<DelayModule>(); });
     r.registerType (PingPongModule::desc(),        [] { return std::make_unique<PingPongModule>(); });
+    // ---- Analog colour + tone tools -------------------------------------
+    r.registerType (TapeSatModule::desc(),         [] { return std::make_unique<TapeSatModule>(); });
+    r.registerType (ConsoleSatModule::desc(),      [] { return std::make_unique<ConsoleSatModule>(); });
+    r.registerType (TransientModule::desc(),       [] { return std::make_unique<TransientModule>(); });
+    r.registerType (TelephoneModule::desc(),       [] { return std::make_unique<TelephoneModule>(); });
+    r.registerType (VintageEqModule::desc(),       [] { return std::make_unique<VintageEqModule>(); });
+    r.registerType (OpticalCompModule::desc(),     [] { return std::make_unique<OpticalCompModule>(); });
 
     // ---- ROADMAP (searchable now; factories added incrementally) ---------
     auto plan = [&r] (const char* id, const char* name, Category c,
@@ -72,22 +80,16 @@ void registerBuiltInModules()
     plan ("ai_chain_builder", "AI Chain Builder", C::AIAnalysis, { "ai", "chain", "auto", "suggest" }, "Builds a full chain from analysis.");
     // EQ
     plan ("linear_phase_eq", "Linear Phase EQ", C::EQ, { "eq", "linear phase", "mastering", "transparent" }, "Phase-linear EQ for mastering.");
-    plan ("vintage_eq", "Vintage EQ", C::EQ, { "eq", "vintage", "analog", "warm", "musical" }, "Musical vintage-voiced EQ.");
     plan ("match_eq", "Match EQ", C::EQ, { "eq", "match", "reference", "tone match" }, "Match the tone of a reference.");
     plan ("ai_smart_eq", "AI Smart EQ", C::EQ, { "eq", "ai", "auto", "smart" }, "AI-driven corrective EQ.");
     // Filter
     plan ("bandpass", "Band Pass", C::Filter, { "filter", "band pass" }, "Band-pass filter.");
-    plan ("telephone", "Telephone Filter", C::Filter, { "filter", "telephone", "lofi", "band limit" }, "Band-limited 'phone' effect.");
     plan ("auto_filter", "Auto Filter", C::Filter, { "filter", "auto", "envelope", "movement" }, "Envelope-following filter.");
     // Dynamics
     plan ("multiband_comp", "Multiband Compressor", C::Dynamics, { "compress", "multiband", "dynamics" }, "Per-band compression.");
-    plan ("optical_comp", "Optical Compressor", C::Dynamics, { "compress", "optical", "smooth", "vintage" }, "Smooth optical-style compression.");
     plan ("fet_comp", "FET Compressor", C::Dynamics, { "compress", "fet", "punch", "aggressive" }, "Fast FET-style compression.");
-    plan ("transient_designer", "Transient Designer", C::Dynamics, { "transient", "punch", "attack", "sustain" }, "Shape attack and sustain.");
     plan ("ai_compressor", "AI Compressor", C::Dynamics, { "compress", "ai", "auto", "dynamics" }, "Self-configuring compressor.");
     // Saturation
-    plan ("tape_sat", "Tape Saturation", C::Saturation, { "warm", "tape", "analog", "vintage", "saturation", "colour" }, "Smooth tape saturation.");
-    plan ("console_sat", "Console Saturation", C::Saturation, { "console", "analog", "glue", "colour", "saturation" }, "Subtle console drive.");
     plan ("transformer_sat", "Transformer", C::Saturation, { "transformer", "iron", "thick", "analog", "saturation" }, "Transformer core saturation.");
     plan ("bitcrusher", "Bit Crusher", C::Saturation, { "lofi", "bitcrush", "digital", "crush", "gritty" }, "Bit + sample-rate reduction.");
     plan ("vinyl_sat", "Vinyl", C::Saturation, { "vinyl", "lofi", "vintage", "warm", "crackle" }, "Vinyl character.");

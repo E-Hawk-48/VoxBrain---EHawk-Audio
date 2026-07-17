@@ -346,19 +346,26 @@ struct Modifiers { float intensity = 1.0f; bool inverted = false; };
 Modifiers scanModifiers (const juce::StringArray& words, int matchWordIndex)
 {
     Modifiers m;
-    const int from = juce::jmax (0, matchWordIndex - 3);
+    const int from = juce::jmax (0, matchWordIndex - 4);   // look back up to 4 words
     for (int i = from; i <= matchWordIndex && i < words.size(); ++i)
     {
         const auto& w = words[i];
         if (w == "less" || w == "too" || w == "reduce" || w == "remove" || w == "no"
-            || w == "without" || w == "lower" || w == "cut" || w == "kill" || w == "stop")
+            || w == "without" || w == "lower" || w == "cut" || w == "kill" || w == "stop"
+            || w == "drop" || w == "ease" || w == "minus" || w == "pull" || w == "dial")
             m.inverted = true;
         else if (w == "slightly" || w == "bit" || w == "little" || w == "touch"
-                 || w == "tad" || w == "subtle" || w == "hair")
+                 || w == "tad" || w == "subtle" || w == "hair" || w == "gentle"
+                 || w == "gentler" || w == "softer" || w == "lightly")
             m.intensity = 0.5f;
         else if (w == "way" || w == "much" || w == "lot" || w == "really" || w == "super"
-                 || w == "very" || w == "extremely" || w == "max" || w == "heavy")
+                 || w == "very" || w == "extremely" || w == "max" || w == "heavy"
+                 || w == "tons" || w == "hella" || w == "mad")
             m.intensity = 1.7f;
+        else if (w == "better" || w == "more" || w == "stronger" || w == "tighter"
+                 || w == "harder" || w == "cleaner" || w == "crisper" || w == "extra"
+                 || w == "boost" || w == "add")
+            m.intensity = juce::jmax (m.intensity, 1.35f);   // "better/more X" → push harder
     }
     return m;
 }
@@ -401,19 +408,10 @@ void applyMove (juce::AudioProcessorValueTreeState& apvts, const Move& mv,
 juce::String ChatEngine::handleMessage (const juce::String& message,
                                         juce::AudioProcessorValueTreeState& apvts)
 {
-    // Normalise: lowercase, punctuation → spaces
-    juce::String norm = message.toLowerCase();
-    juce::String cleaned;
-    for (auto c : norm)
-        cleaned << (juce::CharacterFunctions::isLetterOrDigit (c) ? juce::String::charToString (c)
-                                                                  : juce::String (" "));
-    cleaned = " " + cleaned.trim().replace ("  ", " ") + " ";
+    const juce::String lower = message.toLowerCase();
 
-    juce::StringArray words;
-    words.addTokens (cleaned.trim(), " ", "");
-
-    // "reset" macro
-    if (cleaned.contains (" reset ") || cleaned.contains (" start over "))
+    // "reset" shortcut
+    if ((" " + lower + " ").contains (" reset ") || lower.contains ("start over"))
     {
         for (auto* p : apvts.processor.getParameters())
             if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
@@ -427,12 +425,17 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
         return "Reset the chain to defaults (locked modules kept). Clean slate.";
     }
 
-    // Match rules (longest synonyms first so "hard tune" beats "tune")
-    struct Match { const Rule* rule; Modifiers mods; };
-    std::vector<Match> matches;
-    juce::String consumed = cleaned;
+    // ---- Full-sentence parsing -------------------------------------------
+    //  Split the request into independent clauses so each modifier scopes only
+    //  to its own target. e.g. "make it more emo-trap, less reverb, better
+    //  autotune and brighter" → 4 clauses, each interpreted on its own.
+    juce::String segmented = lower;
+    for (auto* c : { ",", ";", ".", " and ", " then ", " but ", " plus ", " also ", " with ", " while " })
+        segmented = segmented.replace (c, " | ");
+    juce::StringArray clauses;
+    clauses.addTokens (segmented, "|", "");
 
-    // Collect all (rule, synonym) pairs and sort by synonym length descending
+    // (rule, synonym) pairs, longest-synonym-first ("hard tune" beats "tune").
     std::vector<std::pair<const Rule*, const char*>> pairs;
     for (const auto& rule : rules())
         for (const auto* syn : rule.synonyms)
@@ -441,26 +444,36 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
                [] (const auto& a, const auto& b)
                { return juce::String (a.second).length() > juce::String (b.second).length(); });
 
-    for (const auto& [rule, syn] : pairs)
+    struct Match { const Rule* rule; Modifiers mods; };
+    std::vector<Match> matches;
+
+    for (const auto& clauseRaw : clauses)
     {
-        const juce::String needle = " " + juce::String (syn) + " ";
-        const int pos = consumed.indexOf (needle);
-        if (pos < 0)
-            continue;
+        juce::String cl;                          // normalise this clause
+        for (auto ch : clauseRaw)
+            cl << (juce::CharacterFunctions::isLetterOrDigit (ch) ? juce::String::charToString (ch)
+                                                                  : juce::String (" "));
+        cl = " " + cl.trim().replace ("  ", " ") + " ";
+        if (cl.trim().isEmpty()) continue;
 
-        // Already matched this rule via a longer synonym?
-        bool dup = false;
-        for (const auto& m : matches) dup = dup || m.rule == rule;
-        if (dup) continue;
+        juce::StringArray words; words.addTokens (cl.trim(), " ", "");
+        juce::String consumed = cl;
 
-        // Word index of the match (for modifier lookback)
-        const int wordIdx = juce::StringArray::fromTokens (
-                                consumed.substring (0, pos + 1).trim(), " ", "").size();
-        matches.push_back ({ rule, scanModifiers (words, wordIdx) });
+        for (const auto& [rule, syn] : pairs)
+        {
+            const juce::String needle = " " + juce::String (syn) + " ";
+            const int pos = consumed.indexOf (needle);
+            if (pos < 0) continue;
 
-        // Blank out the matched phrase so shorter synonyms can't re-match it
-        consumed = consumed.substring (0, pos) + " "
-                 + consumed.substring (pos + needle.length());
+            bool dup = false;                     // never apply the same rule twice
+            for (const auto& mm : matches) dup = dup || mm.rule == rule;
+            if (dup) continue;
+
+            const int wordIdx = juce::StringArray::fromTokens (
+                                    consumed.substring (0, pos + 1).trim(), " ", "").size();
+            matches.push_back ({ rule, scanModifiers (words, wordIdx) });   // clause-scoped
+            consumed = consumed.substring (0, pos) + " " + consumed.substring (pos + needle.length());
+        }
     }
 
     if (matches.empty())

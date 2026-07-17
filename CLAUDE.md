@@ -174,6 +174,13 @@ verified feature per session, same as #1.
   key"/"harmonic minor"/"pentatonic"/"blues" → pitch_scale index; "robotic tune"
   → hard-lock); richer natural phrases ("make it pop"/"3d", "tuck it back",
   "thin", "de-breath", "double it"); and GENRE one-shot presets (absolute
+  FULL-SENTENCE PARSING (verified): handleMessage now segments the request into
+  clauses (split on commas/periods/"and"/"then"/"but"/"with"/…) and matches +
+  scopes modifiers PER CLAUSE, so compound commands like "make it more emo-trap,
+  less reverb, better autotune and brighter" apply all four correctly (pure-logic
+  test: 4 clauses → EMO + REVERB(inverted) + AUTOTUNE(boosted) + BRIGHT). Richer
+  modifiers: "better/more/tighter/cleaner/stronger" → 1.35× boost; added
+  gentler/softer, drop/ease/pull to the down set. Genre one-shots (absolute
   multi-param): "rap"/"trap", "drill", "pop vocal", "rnb"/"neo soul", "rock",
   "country"/"folk", "gospel". Genre presets set eq/comp/deess/sat/pitch/reverb
   targets in one command. (Genre here = user-driven chat presets; a genre-aware
@@ -222,9 +229,23 @@ verified feature per session, same as #1.
   runtime tests — metadata round-trip/hash/tamper/dup/version (16), factory
   130+morph (23), library search/filter/sort/favorites/collections/discovery +
   AI-gen + LocalMarketplace upload-validation/creator/ratings (29) — ALL PASS.
-  NEXT PHASE: the Preset Browser UI (grid/list, discovery views, creator pages,
-  morph slider) and a real networked backend behind the same MarketplaceClient
-  interface (cloud sync of favorites/collections/uploads).
+  PRESET BROWSER UI (done — `UI/PresetBrowser.*`): a full-window overlay
+  (header PRESETS button) over `getPresetLibrary()` — search box, genre + sort
+  ComboBoxes, discovery tabs (All/Trending/New/AI Picks/Favorites), and a ListBox
+  of rich preset rows (name, creator·genre·mood, favourite star gutter,
+  AI/OFFICIAL/COMMUNITY/USER badge, rating + downloads, verified tick). Actions:
+  Load (applyPreset), Save Current (captureCurrentAsPreset → library), ✨ AI
+  Preset (generateAiPreset → library + load), Favorite. Wired in the editor via
+  the processor accessors. VERIFIED: PresetBrowser.cpp syntax-compiles vs JUCE.
+  NEXT PHASE: preset cards grid view + morph slider UI, and a real networked
+  backend behind the same MarketplaceClient interface (cloud sync).
+- MORE VOCAL MODULES (`Modules/AnalogModules.*`, +6 = 30 implemented total):
+  Tape Saturation, Console Saturation, Transient Designer (fast/slow env attack+
+  sustain), Telephone (band-limit + drive), Vintage EQ (broad shelves + presence
+  bell), Optical Compressor (slow program-dependent). Registered (plan→register),
+  and the ModuleAdvisor now suggests Transient Designer (moderate crest), Tape
+  Saturation (not-bright tone), and Optical Compressor (dynamic+sustained).
+  VERIFIED: all 6 create/process finite; advisor suggests them.
 - `Update/UpdateChecker.*` (#12) — cross-platform (Win+mac) auto-update client,
   a `juce::Thread`. On load (throttled ≤ once/4h via `update.check` stamp file)
   it fetches `VOXBRAIN_UPDATE_URL` via `juce::URL` (WinINet/NSURL — no curl;

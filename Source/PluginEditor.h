@@ -9,6 +9,7 @@
 #include "UI/RackView.h"
 #include "UI/PitchDisplay.h"
 #include "UI/ThemePanel.h"
+#include "UI/PresetBrowser.h"
 
 namespace vf
 {
@@ -34,12 +35,14 @@ private:
     void learnClicked();
     void toggleRack();
     void toggleTheme();
+    void togglePresets();
 
     VoxBrainProcessor& processor;
     VoxBrainLookAndFeel lookAndFeel;
 
     juce::TextButton learnButton { "LEARN" };
     juce::TextButton modulesButton { "MODULES" };
+    juce::TextButton presetsButton { "PRESETS" };
     juce::TextButton themeButton { "THEME" };
     UpdateBanner updateBanner;
     SpectrumDisplay spectrum;
@@ -49,8 +52,10 @@ private:
     ModuleStrip moduleStrip;
     RackView rackView;
     ThemePanel themePanel;
+    PresetBrowser presetBrowser;
     bool rackVisible = false;
     bool themeVisible = false;
+    bool browserVisible = false;
 
     float pulsePhase = 0.0f;
 

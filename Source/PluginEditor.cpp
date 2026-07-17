@@ -10,7 +10,11 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
       pitchDisplay (p.getChain().getRetune()),
       presetBar (p.getPresets()),
       moduleStrip (p.apvts),
-      rackView (p.apvts, p.getRack(), [&p] { return p.suggestModules(); })
+      rackView (p.apvts, p.getRack(), [&p] { return p.suggestModules(); }),
+      presetBrowser (p.getPresetLibrary(),
+                     [&p] (const Preset& pr) { p.applyPreset (pr); },
+                     [&p] { return p.captureCurrentAsPreset(); },
+                     [&p] { return p.generateAiPreset(); })
 {
     theme::load();                 // restore the user's saved colours before styling
     lookAndFeel.refreshColours();
@@ -23,6 +27,13 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
     modulesButton.onClick = [this] { toggleRack(); };
     addAndMakeVisible (modulesButton);
+
+    presetsButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
+    presetsButton.onClick = [this] { togglePresets(); };
+    addAndMakeVisible (presetsButton);
+
+    addChildComponent (presetBrowser);
+    presetBrowser.onClose = [this] { togglePresets(); };
 
     themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
     themeButton.onClick = [this] { toggleTheme(); };
@@ -124,6 +135,15 @@ void VoxBrainEditor::toggleTheme()
     resized();
 }
 
+void VoxBrainEditor::togglePresets()
+{
+    browserVisible = ! browserVisible;
+    presetBrowser.setVisible (browserVisible);
+    if (browserVisible) { presetBrowser.refresh(); presetBrowser.toFront (true); }
+    presetsButton.setButtonText (browserVisible ? "◂ MIXER" : "PRESETS");
+    resized();
+}
+
 void VoxBrainEditor::timerCallback()
 {
     // Pulse the learn button while listening
@@ -174,9 +194,14 @@ void VoxBrainEditor::resized()
     modulesButton.setBounds (header.removeFromRight (120));
     header.removeFromRight (8);
     themeButton.setBounds (header.removeFromRight (90));
+    header.removeFromRight (8);
+    presetsButton.setBounds (header.removeFromRight (110));
 
     // Theme panel: a floating card, centred over the content.
     themePanel.setBounds (getLocalBounds().withSizeKeepingCentre (400, 560));
+    // Preset browser: full-window overlay below the header.
+    presetBrowser.setBounds (area);
+    if (browserVisible) return;   // browser covers the mixer
 
     // The rack is a full-window overlay below the header.
     rackView.setBounds (area);

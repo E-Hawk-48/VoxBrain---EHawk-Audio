@@ -69,6 +69,21 @@ std::vector<ModuleSuggestion> ModuleAdvisor::suggest (const AnalysisSnapshot& s)
         add ("stereo_chorus", "Stereo Chorus",
              "This is a sustained, melodic take — a Stereo Chorus may help widen the hook.", 45);
 
+    // Moderate dynamics → Transient Designer for snap/punch
+    if (s.crestDb > 10.0f && s.crestDb < 17.0f)
+        add ("transient_designer", "Transient Designer",
+             "The delivery could use more snap — a Transient Designer would sharpen the attack for punch.", 58);
+
+    // Not bright → Tape Saturation for analog warmth + glue
+    if (s.brightness < 0.55f)
+        add ("tape_sat", "Tape Saturation",
+             "Some analog warmth would flatter this tone — Tape Saturation adds body and glue.", 50);
+
+    // Dynamic + sustained → Optical Compressor for smooth leveling
+    if (s.crestDb > 16.0f && s.voicedRatio > 0.5f)
+        add ("optical_comp", "Optical Compressor",
+             "A dynamic, sustained take responds beautifully to an Optical Compressor for smooth, invisible leveling.", 62);
+
     std::stable_sort (out.begin(), out.end(),
                       [] (const auto& a, const auto& b) { return a.priority > b.priority; });
     return out;
