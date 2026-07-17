@@ -320,9 +320,16 @@ void RackView::autoBuild()
             if (ModuleRegistry::instance().isImplemented (s.moduleId))
                 ids.push_back (s.moduleId);
 
-    // Always front the chain with clean-up + control, in signal-flow order.
-    static const char* base[] = { "gate", "de_plosive", "de_esser",
-                                  "parametric_eq", "compressor", "dynamic_eq" };
+    // A complete pro vocal chain in signal-flow order — clean-up, tone,
+    // control, colour, then space — showcasing the analog modules.
+    static const char* base[] = {
+        "gate", "de_plosive", "de_esser",     // clean-up
+        "vintage_eq", "parametric_eq",         // tone
+        "optical_comp", "transient_designer",  // control + punch
+        "compressor", "dynamic_eq",            // level + resonance
+        "tape_sat",                            // analog colour
+        "reverb_hall"                          // space
+    };
     std::vector<juce::String> order;
     for (auto* b : base) order.push_back (b);
     for (const auto& s : ids) order.push_back (s);   // advisor extras after the core
@@ -502,6 +509,8 @@ void RackView::refreshAdvisor()
 
 void RackView::timerCallback()
 {
+    // Auto-sync if the rack changed from outside the panel (e.g. LEARN built it).
+    if (rack.size() != (int) cards.size()) { rebuildCards(); return; }
     if (cards.empty()) return;
     const auto snap = rack.snapshot();
     for (auto& c : cards)

@@ -281,11 +281,13 @@ void VoxBrainProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
     }
 
     lastSnapshot = snapshot;           // keep for the module advisor (rack UI)
+    analysis.setPitchDnaFromSnapshot (snapshot.dna);   // seed live-radar slow axes
     lastResult = AutoMixBrain::computeChain (snapshot);
     lastResult.summary << "\n" << engineNote << "\n";
 
     presets.pushUndo ("Auto-Mix");     // so a single Undo reverts the whole pass
     applyBrainResult (lastResult);
+    autoBuildRackFromAnalysis();       // LEARN also builds a complementary rack
 
     // Note any locked modules the AI deliberately left alone (transparency).
     struct LM { const char* id; const char* name; };
@@ -314,6 +316,53 @@ juce::String VoxBrainProcessor::applyChatMessage (const juce::String& message)
 std::vector<mods::ModuleSuggestion> VoxBrainProcessor::suggestModules() const
 {
     return mods::ModuleAdvisor::suggest (lastSnapshot);
+}
+
+void VoxBrainProcessor::syncRackMacros()
+{
+    const auto snap = rack.snapshot();
+    const int n = juce::jmin ((int) snap.size(), mods::ModuleRack::Automation::Slots);
+    for (int slot = 0; slot < n; ++slot)
+    {
+        auto* m = rack.find (snap[(size_t) slot].instanceId);
+        if (m == nullptr) continue;
+        auto& ps = m->params();
+        const int np = juce::jmin ((int) ps.size(), mods::ModuleRack::Automation::Macros);
+        for (int k = 0; k < np; ++k)
+        {
+            const float mn = ps[(size_t) k].min, mx = ps[(size_t) k].max;
+            const float norm = mx > mn ? juce::jlimit (0.0f, 1.0f, (ps[(size_t) k].value - mn) / (mx - mn)) : 0.0f;
+            if (auto* p = apvts.getParameter ("rack_s" + juce::String (slot) + "_m" + juce::String (k)))
+                p->setValueNotifyingHost (norm);
+        }
+    }
+}
+
+void VoxBrainProcessor::autoBuildRackFromAnalysis()
+{
+    if (rack.size() > 0) return;              // never clobber a user-built rack
+    const auto& s = lastSnapshot;
+    if (! s.valid) return;
+
+    auto addWith = [this] (const juce::String& id, std::vector<std::pair<const char*, float>> vals)
+    {
+        const auto iid = rack.addModule (id);
+        if (iid.isEmpty()) return;
+        if (auto* m = rack.find (iid))
+            for (const auto& [k, v] : vals) m->setValue (k, v);
+    };
+
+    // Complementary polish that the fixed chain does NOT do (so nothing doubles):
+    if (s.crestDb > 8.0f && s.crestDb < 18.0f)
+        addWith ("transient_designer", { { "attack", 35.0f }, { "sustain", 0.0f } });   // punch
+    if (s.brightness < 0.55f)
+        addWith ("tape_sat", { { "drive", 22.0f }, { "tone", 55.0f }, { "mix", 30.0f } }); // warmth
+    if (s.brightness < 0.42f)
+        addWith ("exciter", { { "freq", 4000.0f }, { "amount", 45.0f }, { "mix", 28.0f } }); // air
+    if (s.voicedRatio > 0.5f && s.pitchStabilityCents < 60.0f && s.transientDensity < 4.0f)
+        addWith ("stereo_chorus", { { "rate", 0.5f }, { "depth", 40.0f }, { "mix", 26.0f }, { "width", 80.0f } }); // width
+
+    syncRackMacros();
 }
 
 Preset VoxBrainProcessor::captureCurrentAsPreset()

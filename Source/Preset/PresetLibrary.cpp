@@ -175,7 +175,7 @@ std::vector<const Preset*> PresetLibrary::collection (const juce::String& name) 
 // ============================================================================
 //  Discovery views
 // ============================================================================
-static std::vector<const Preset*> topBy (const std::vector<Preset>& ps, int n,
+static std::vector<const Preset*> topBy (const std::deque<Preset>& ps, int n,
                                          std::function<bool (const Preset&, const Preset&)> less)
 {
     std::vector<const Preset*> out;

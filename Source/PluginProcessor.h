@@ -89,6 +89,11 @@ private:
     void applyBrainResult (const AutoMixBrain::Result& r);
     bool isModuleLocked (const juce::String& paramId) const;
 
+    // LEARN → auto-populate the rack with complementary polish (additive to the
+    // fixed chain; only when the rack is empty so it never clobbers a user rack).
+    void autoBuildRackFromAnalysis();
+    void syncRackMacros();   // push each rack module's values into its slot macros
+
     AnalysisEngine analysis;
     VocalChain     chain;
     PresetManager  presets { apvts };   // declared after apvts → constructed after it

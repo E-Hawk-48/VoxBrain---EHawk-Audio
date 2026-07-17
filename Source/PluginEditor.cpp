@@ -7,6 +7,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       spectrum (p.getAnalysis()),
+      dnaPanel (p.getAnalysis()),
       pitchDisplay (p.getChain().getRetune()),
       presetBar (p.getPresets()),
       moduleStrip (p.apvts),
@@ -55,6 +56,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     rackView.onClose = [this] { toggleRack(); };
     addChildComponent (updateBanner);   // shows itself only when an update is pending
     addAndMakeVisible (spectrum);
+    addAndMakeVisible (dnaPanel);
     addAndMakeVisible (pitchDisplay);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (analysisPanel);
@@ -158,26 +160,60 @@ void VoxBrainEditor::timerCallback()
 
 void VoxBrainEditor::paint (juce::Graphics& g)
 {
-    // Subtle vertical gradient backdrop for depth.
-    g.setGradientFill (juce::ColourGradient (theme::bg.brighter (0.03f), 0.0f, 0.0f,
-                                             theme::bg.darker (0.25f), 0.0f, (float) getHeight(), false));
+    const float w = (float) getWidth();
+    const float h = (float) getHeight();
+    const float glow = juce::jlimit (0.2f, 1.0f, theme::glow);
+
+    // Base vertical gradient backdrop for depth.
+    g.setGradientFill (juce::ColourGradient (theme::bg.brighter (0.04f), 0.0f, 0.0f,
+                                             theme::bg.darker (0.30f), 0.0f, h, false));
     g.fillAll();
 
-    // Header bar with an accent underline.
+    // Holographic glow: two large radial pools of the two accent colours in
+    // opposite corners. Low alpha so it reads as ambient light through glass.
+    auto radial = [&g] (juce::Colour c, float cxp, float cyp, float radius, float w_, float h_)
+    {
+        juce::ColourGradient gr (c, cxp, cyp, juce::Colours::transparentBlack,
+                                 cxp, cyp + radius, true);
+        g.setGradientFill (gr);
+        g.fillRect (0.0f, 0.0f, w_, h_);
+    };
+    radial (theme::accent.withAlpha    (0.16f * glow), w * 0.82f, h * 0.06f, h * 0.62f, w, h);
+    radial (theme::accentWarm.withAlpha (0.13f * glow), w * 0.10f, h * 0.94f, h * 0.60f, w, h);
+
+    // Vignette for a glassy, focused centre.
+    juce::ColourGradient vig (juce::Colours::transparentBlack, w * 0.5f, h * 0.5f,
+                              juce::Colours::black.withAlpha (0.35f), w * 0.5f, h, true);
+    g.setGradientFill (vig);
+    g.fillRect (getLocalBounds());
+
+    // ---- frosted header bar ----
     auto bar = getLocalBounds().removeFromTop (52);
-    g.setColour (theme::panel.withAlpha (0.6f));
+    g.setGradientFill (juce::ColourGradient (theme::panelLight.withAlpha (0.55f), 0.0f, 0.0f,
+                                             theme::panel.withAlpha (0.75f), 0.0f, 52.0f, false));
     g.fillRect (bar);
+    // top highlight line (glass edge) + accent underline with soft glow
+    g.setColour (theme::text.withAlpha (0.06f));
+    g.fillRect (bar.getX(), bar.getY(), bar.getWidth(), 1);
+    g.setColour (theme::accent.withAlpha (0.25f * glow));
+    g.fillRect (0, 51, getWidth(), 4);
     g.setColour (theme::accent);
-    g.fillRect (bar.removeFromBottom (2));
+    g.fillRect (0, 51, getWidth(), 2);
 
     auto header = getLocalBounds().removeFromTop (52).reduced (16, 0);
-    // accent dot
+    // glowing accent dot
+    const float dotY = header.getCentreY() - 4.0f;
+    g.setColour (theme::accent.withAlpha (0.35f * glow));
+    g.fillEllipse ((float) header.getX() - 3.0f, dotY - 3.0f, 14.0f, 14.0f);
     g.setColour (theme::accent);
-    g.fillEllipse ((float) header.getX(), header.getCentreY() - 4.0f, 8.0f, 8.0f);
+    g.fillEllipse ((float) header.getX(), dotY, 8.0f, 8.0f);
     header.removeFromLeft (16);
 
-    g.setColour (theme::text);
+    // soft glow behind the wordmark
+    g.setColour (theme::accent.withAlpha (0.18f * glow));
     g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
+    g.drawText ("VOXBRAIN", header.translated (0, 0), juce::Justification::centredLeft);
+    g.setColour (theme::text);
     g.drawText ("VOXBRAIN", header, juce::Justification::centredLeft);
     g.setColour (theme::accent);
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
@@ -198,7 +234,7 @@ void VoxBrainEditor::resized()
     presetsButton.setBounds (header.removeFromRight (110));
 
     // Theme panel: a floating card, centred over the content.
-    themePanel.setBounds (getLocalBounds().withSizeKeepingCentre (400, 560));
+    themePanel.setBounds (getLocalBounds().withSizeKeepingCentre (420, 620));
     // Preset browser: full-window overlay below the header.
     presetBrowser.setBounds (area);
     if (browserVisible) return;   // browser covers the mixer
@@ -216,6 +252,11 @@ void VoxBrainEditor::resized()
     analysisPanel.setBounds (area.removeFromBottom (170).reduced (0, 4));
     presetBar.setBounds (area.removeFromBottom (36));
     pitchDisplay.setBounds (area.removeFromBottom (120).reduced (0, 4));
-    spectrum.setBounds (area.reduced (3, 4));
+
+    // Top visual row: spectrum on the left, live Vocal DNA radar on the right.
+    auto top = area.reduced (3, 4);
+    const int radarW = juce::jlimit (200, 320, top.getWidth() * 38 / 100);
+    dnaPanel.setBounds (top.removeFromRight (radarW).reduced (6, 0));
+    spectrum.setBounds (top);
 }
 } // namespace vf

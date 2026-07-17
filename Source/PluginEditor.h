@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "UI/LookAndFeel.h"
 #include "UI/SpectrumDisplay.h"
+#include "UI/VocalDnaPanel.h"
 #include "UI/ModuleStrip.h"
 #include "UI/AnalysisPanel.h"
 #include "UI/PresetBar.h"
@@ -46,6 +47,7 @@ private:
     juce::TextButton themeButton { "THEME" };
     UpdateBanner updateBanner;
     SpectrumDisplay spectrum;
+    VocalDnaPanel dnaPanel;
     PitchDisplay pitchDisplay;
     PresetBar presetBar;
     AnalysisPanel analysisPanel;

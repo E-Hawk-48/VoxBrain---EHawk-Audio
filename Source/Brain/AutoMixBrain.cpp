@@ -49,6 +49,43 @@ namespace
         }
         return "Vocal";
     }
+
+    // ------------------------------------------------------------------
+    //  Plain-language read of the Vocal DNA fingerprint. This is what makes
+    //  the analysis "explainable" — it tells the user what it heard in the
+    //  voice before it lists what it did about it.
+    // ------------------------------------------------------------------
+    juce::String describeDNA (const VocalDNA& d)
+    {
+        if (! d.valid) return {};
+        auto pct = [] (float x) { return juce::String ((int) std::round (x * 100.0f)); };
+        auto lvl = [] (float x, const char* lo, const char* mid, const char* hi)
+        { return juce::String (x < 0.34f ? lo : x < 0.67f ? mid : hi); };
+
+        juce::String o;
+        o << "== Vocal DNA ==\n";
+        o << "Tuning: " << pct (d.tuning) << "% in-tune "
+          << (d.tuning > 0.85f ? "(excellent)" : d.tuning > 0.6f ? "(good)" : "(drifty — retune engaged)") << "\n";
+        o << "Pitch: " << lvl (d.stability, "jittery", "steady", "rock-solid");
+        if (d.vibrato > 0.35f) o << " with natural vibrato";
+        o << "\n";
+        o << "Tone: " << lvl (d.brightness, "dark", "balanced", "bright")
+          << ", " << lvl (d.warmth, "lean", "full-bodied", "very warm") << "\n";
+
+        juce::StringArray issues;
+        if (d.muddiness   > 0.55f) issues.add ("muddy low-mids");
+        if (d.boxiness    > 0.55f) issues.add ("boxiness");
+        if (d.nasal       > 0.55f) issues.add ("nasal honk");
+        if (d.harshness   > 0.55f) issues.add ("harshness");
+        if (d.sibilance   > 0.55f) issues.add ("strong sibilance");
+        if (d.plosives    > 0.55f) issues.add ("plosives/rumble");
+        if (d.breathiness > 0.60f) issues.add ("breath/room noise");
+        if (d.noise       > 0.60f) issues.add ("high noise floor");
+        o << (issues.isEmpty() ? "Cleanliness: no major tonal problems detected.\n"
+                               : "Flagged for cleanup: " + issues.joinIntoString (", ") + ".\n");
+        o << "Dynamics: " << lvl (d.dynamics, "flat/compressed", "moderate", "very dynamic") << "\n";
+        return o;
+    }
 }
 
 // ============================================================================
@@ -187,6 +224,9 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     else                           { presGain = 0.0f; airGain = 0.5f; }
     // Harshness guard: strong presence band already? Don't add more.
     if (s.presenceDb > -10.0f) presGain = std::min (presGain, 0.0f);
+    // Spectral-tilt polish: dark-tilted takes earn extra air; bright-tilted ones don't.
+    if (s.spectralTiltDb < -10.0f)      airGain = std::min (airGain + 1.5f, 4.5f);
+    else if (s.spectralTiltDb > 6.0f)   airGain = std::min (airGain, 0.5f);
     add (eqPresenceGain, presGain,
          juce::String ("Brightness index ") + juce::String (s.brightness, 2)
          + " — presence " + (presGain > 0 ? "+" : "") + juce::String (presGain, 1) + " dB.");
@@ -207,7 +247,7 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     // ------------------------------------------------------------------
     const bool boomy    = s.mudDb > -11.0f || s.lowDb > -9.0f;
     const bool nasal    = s.midDb > -7.0f;
-    const bool harshDyn = s.presenceDb > -11.0f || s.brightness > 0.62f;
+    const bool harshDyn = s.presenceDb > -11.0f || s.brightness > 0.62f || s.harshnessDb > 3.0f;
     if (boomy || nasal || harshDyn)
     {
         add (dyneqOn, 1.0f, "");
@@ -272,6 +312,13 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     if (s.crestDb > 20.0f)        { ratio = 4.0f; thresholdOffset = 10.0f; attack = 3.0f;  release = 80.0f; }
     else if (s.crestDb > 14.0f)   { ratio = 3.0f; thresholdOffset = 8.0f;  attack = 5.0f;  release = 120.0f; }
     else                          { ratio = 2.0f; thresholdOffset = 6.0f;  attack = 8.0f;  release = 150.0f; }
+
+    // Loud-vs-quiet spread (LRA) firms up the ratio for a consistent front-of-mix level.
+    if (s.dynamicRangeDb > 14.0f)      ratio += 1.0f;
+    else if (s.dynamicRangeDb > 0.0f && s.dynamicRangeDb < 6.0f) ratio = juce::jmax (1.5f, ratio - 0.5f);
+    // Fast, syllabic delivery → quicker attack so nothing slips past; release tracks the pace.
+    if (s.transientDensity > 4.0f) { attack = juce::jmax (2.0f, attack - 2.5f); release = juce::jmax (60.0f, release - 30.0f); }
+    else if (s.transientDensity > 0.0f && s.transientDensity < 1.5f) attack += 3.0f;  // sustained → let it breathe
 
     const float compThresh = clampf (stagedRms - thresholdOffset + 6.0f, -60.0f, 0.0f);
     add (compThreshold, compThresh,
@@ -344,7 +391,7 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     //    Sustained/melodic (high voiced ratio, stable pitch) → lusher space.
     //    Rhythmic/spoken (low voiced ratio) → tight slap, drier verb.
     // ------------------------------------------------------------------
-    const bool melodic = s.voicedRatio > 0.45f && s.pitchStabilityCents < 60.0f;
+    const bool melodic = s.voicedRatio > 0.45f && s.pitchStabilityCents < 60.0f && s.transientDensity < 4.0f;
     if (melodic)
     {
         add (delayOn, 1.0f, "");
@@ -477,7 +524,11 @@ juce::String AutoMixBrain::buildSummary (const AnalysisSnapshot& s,
             << " (confidence " << juce::String (s.keyConfidence, 2) << ")\n";
     }
     out << "Brightness " << juce::String (s.brightness, 2) << " | Sibilance "
-        << juce::String (s.sibilanceRatio, 2) << "\n\n";
+        << juce::String (s.sibilanceRatio, 2) << "\n";
+    out << "Tilt " << juce::String (s.spectralTiltDb, 1) << " dB | Dynamic range "
+        << juce::String (s.dynamicRangeDb, 1) << " dB | Transients "
+        << juce::String (s.transientDensity, 1) << "/s\n\n";
+    out << describeDNA (s.dna) << "\n";
     out << "== Decisions ==\n";
     for (const auto& dec : d)
         if (dec.rationale.isNotEmpty())

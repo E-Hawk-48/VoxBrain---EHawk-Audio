@@ -145,6 +145,29 @@ verified feature per session, same as #1.
   labels + a big current-note read-out. Reads RetuneEngine's lock-free
   getInputPitchHz/getTargetPitchHz. Sits between the spectrum and preset bar
   (120 px strip). Compiles clean vs JUCE.
+- LEARN AUTO-RACK (v0.2.8, verified): `finishAutoMix` now also calls
+  `autoBuildRackFromAnalysis()` — after the fixed chain is set it populates the
+  rack with COMPLEMENTARY polish that the fixed chain doesn't do (so nothing
+  doubles): transient_designer (crest 8–18 → punch), tape_sat (brightness<0.55 →
+  warmth), exciter (brightness<0.42 → air), stereo_chorus (voiced+stable+
+  non-fast → width). Values are set via `module->setValue`, then
+  `syncRackMacros()` pushes them into the slot macro APVTS params (so they're
+  audible + automatable). Guards: only when `rack.size()==0` (never clobbers a
+  user rack) and `lastSnapshot.valid`. RackView's 8 Hz timer detects the external
+  size change and rebuilds the cards automatically. VERIFIED: rack-build +
+  macro-normalisation runtime test (7/7) + processor integration-API compile.
+- ANALYZER + BRAIN v0.2.7 (verified): AnalysisEngine now also computes
+  `spectralTiltDb` (highs-minus-lows), `dynamicRangeDb` (p95-p10 of frame RMS,
+  LRA proxy), `transientDensity` (>6 dB frame rises per second), and
+  `harshnessDb` (presence over core mids) at finishLearning (RT-safe, from
+  existing accumulators). The brain uses them: dynamic range firms the comp
+  ratio; transient density sets comp attack + tightens delay/verb (fast/syllabic
+  → non-melodic); dark spectral tilt lifts air; harshness engages the dynamic EQ.
+  The report prints Tilt / Dynamic range / Transients. Verified by offline brain
+  test (7/7). RackView Auto-Build now assembles a full pro chain that uses the
+  new analog modules: gate→de_plosive→de_esser→vintage_eq→parametric_eq→
+  optical_comp→transient_designer→compressor→dynamic_eq→tape_sat→reverb_hall
+  (+ advisor extras); all 11 verified creatable.
 - GENRE-AWARE BRAIN (verified): `AutoMixBrain` now infers a vocal Style
   (`inferStyle`: Rap/Pop/R&B/Rock/Ballad/Spoken from voicedRatio + pitch
   stability + crest + brightness — no tempo needed) and biases the chain toward

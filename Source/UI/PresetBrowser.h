@@ -52,7 +52,7 @@ private:
     juce::ComboBox   genreBox, sortBox;
     juce::TextButton browseTab { "All" }, trendingTab { "Trending" },
                      newTab { "New" }, aiTab { "AI Picks" }, favTab { "Favorites" };
-    juce::ListBox    list { "presets", this };
+    juce::ListBox    list { "presets", nullptr };   // model set in the ctor body (order-safe)
     juce::TextButton loadBtn { "Load" }, captureBtn { "Save Current" },
                      genAiBtn { "✨ AI Preset" }, favBtn { "☆ Favorite" };
 

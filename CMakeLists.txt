@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VoxBrain VERSION 0.2.7 LANGUAGES C CXX)
+project(VoxBrain VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -112,6 +112,7 @@ target_sources(VoxBrain PRIVATE
     Source/UI/PitchDisplay.cpp
     Source/UI/ThemePanel.cpp
     Source/UI/PresetBrowser.cpp
+    Source/UI/VocalDnaPanel.cpp
 )
 
 target_include_directories(VoxBrain PRIVATE Source)
@@ -146,6 +147,21 @@ target_link_libraries(VoxBrain
 # SIMD + fast float. AVX2 is x86-only — never pass -mavx2 on Apple Silicon (arm64).
 if(MSVC)
     target_compile_options(VoxBrain PRIVATE /arch:AVX2 /fp:fast)
+    # Emit a .pdb even in Release. /Zi adds symbol info to the shared-code objects;
+    # /DEBUG makes the linker write the .pdb; /OPT:REF,ICF undo the size bloat
+    # /DEBUG otherwise causes so the shipped binary stays just as lean. This does
+    # NOT change runtime behaviour — it only means a future crash report names the
+    # exact function + line instead of a bare address, turning the next diagnosis
+    # into a one-line fix. NOTE: the /DEBUG *link* flag must live on the final
+    # linked binaries (VST3/Standalone) — on the shared static lib it is silently
+    # discarded (same reason the /DELAYLOAD flag below is applied per-target).
+    target_compile_options(VoxBrain PRIVATE /Zi)
+    foreach(dbgtgt IN ITEMS VoxBrain_VST3 VoxBrain_Standalone)
+        if(TARGET ${dbgtgt})
+            target_compile_options(${dbgtgt} PRIVATE /Zi)
+            target_link_options(${dbgtgt} PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+        endif()
+    endforeach()
 elseif(APPLE)
     # Universal / Apple-Silicon safe: no x86 -mavx2. CMAKE_OSX_ARCHITECTURES
     # (set by build_macos.sh) controls arm64/x86_64; add AVX2 only for x86 slices.

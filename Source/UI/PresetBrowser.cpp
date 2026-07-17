@@ -61,6 +61,7 @@ PresetBrowser::PresetBrowser (PresetLibrary& lib,
     tab (aiTab,       View::AiRecommended);
     tab (favTab,      View::Favorites);
 
+    list.setModel (this);          // now that all members exist, it's safe
     list.setRowHeight (54);
     list.setColour (juce::ListBox::backgroundColourId, theme::bg);
     addAndMakeVisible (list);
@@ -158,7 +159,7 @@ void PresetBrowser::refresh() { runQuery(); }
 
 void PresetBrowser::paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected)
 {
-    if (row < 0 || row >= (int) results.size()) return;
+    if (row < 0 || row >= (int) results.size() || results[(size_t) row] == nullptr) return;
     const auto& m = results[(size_t) row]->meta;
     auto r = juce::Rectangle<int> (0, 0, w, h);
 

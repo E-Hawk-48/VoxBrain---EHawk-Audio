@@ -1,6 +1,7 @@
 #pragma once
 #include "PresetMeta.h"
 #include <vector>
+#include <deque>
 #include <map>
 #include <set>
 
@@ -68,7 +69,9 @@ public:
     static float trendingScore (const PresetMeta& m);
 
 private:
-    std::vector<Preset> presets;
+    // deque (NOT vector): add() must never invalidate the const Preset* pointers
+    // that the browser holds — a reallocation would dangle them and crash on paint.
+    std::deque<Preset> presets;
     std::map<juce::String, int> idToIndex;
     std::set<juce::String> favorites;
     std::map<juce::String, std::vector<juce::String>> collections;
