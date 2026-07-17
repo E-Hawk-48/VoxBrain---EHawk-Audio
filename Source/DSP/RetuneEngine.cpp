@@ -337,8 +337,16 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
         }
         mono /= (float) numCh;
 
-        // 2. Track pitch + voicing
-        pushAnalysis (mono);
+        // 2. Track pitch + voicing — ONLY when correcting. The YIN tracker is the
+        //    single biggest always-on CPU cost in the whole plugin (an O(n^2) scan
+        //    every analysis hop). Running it when auto-tune is OFF (the default!)
+        //    wastes headroom and, on smaller DAW buffers, is enough to push the
+        //    plugin into dropouts — heard as choppy/glitchy audio. Skip it when
+        //    bypassed; it warms back up in a fraction of a second when re-enabled.
+        if (p.on)
+            pushAnalysis (mono);
+        else
+            uiInHz.store (0.0f);
 
         if (p.on)
         {

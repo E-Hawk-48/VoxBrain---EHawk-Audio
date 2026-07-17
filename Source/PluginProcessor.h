@@ -96,6 +96,7 @@ private:
 
     AnalysisEngine analysis;
     VocalChain     chain;
+    int            preparedBlockSize = 512;   // max block our internal buffers are sized for
     PresetManager  presets { apvts };   // declared after apvts → constructed after it
     PresetLibrary  presetLibrary;       // factory + user + AI + community index
     UpdateChecker  updater;

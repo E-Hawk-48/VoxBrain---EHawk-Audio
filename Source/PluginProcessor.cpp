@@ -3,6 +3,7 @@
 #include "Preset/FactoryPresetLibrary.h"
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
+#include <cmath>    // std::isfinite for the output safety net
 
 namespace vf
 {
@@ -93,6 +94,7 @@ void VoxBrainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     juce::dsp::ProcessSpec spec { sampleRate,
                                   (juce::uint32) samplesPerBlock,
                                   (juce::uint32) std::max (1, getTotalNumOutputChannels()) };
+    preparedBlockSize = std::max (1, samplesPerBlock);
     chain.prepare (spec);
     rack.prepare (spec);
     analysis.prepare (sampleRate, (int) spec.numChannels);
@@ -208,12 +210,36 @@ void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         snapshotFresh.store (true, std::memory_order_release);
     }
 
-    chain.process (buffer, readChainParams());
-
-    // Modular rack runs after the fixed chain. Empty by default → passthrough,
-    // so existing behaviour is unchanged until the user inserts modules.
+    // Process the fixed chain + rack in slices no larger than the block size we
+    // prepared our internal buffers for. Some hosts (and certain FL Studio modes)
+    // hand a plugin a bigger buffer than it announced in prepareToPlay; without
+    // this guard the oversampled saturator and split-band buffers overrun, which
+    // is heard as constant glitching regardless of settings. When the host behaves
+    // (buffer <= prepared) this is a single pass with zero added overhead.
+    const auto chainP  = readChainParams();
     const auto rackAuto = readRackAutomation();
-    rack.process (buffer, &rackAuto);
+    const int  total = buffer.getNumSamples();
+    const int  nch   = buffer.getNumChannels();
+    const int  maxB  = std::max (1, preparedBlockSize);
+    for (int off = 0; off < total; off += maxB)
+    {
+        const int len = std::min (maxB, total - off);
+        juce::AudioBuffer<float> slice (buffer.getArrayOfWritePointers(), nch, off, len);
+        chain.process (slice, chainP);
+        rack.process  (slice, &rackAuto);
+    }
+
+    // Output safety net: if any DSP stage ever produces a NaN/Inf (bad filter
+    // coefficient, runaway feedback, etc.) it would otherwise propagate and be
+    // heard as continuous nasty glitching. Replace non-finite samples with
+    // silence so one bad value can't poison the stream. Cheap; RT-safe.
+    for (int c = 0; c < buffer.getNumChannels(); ++c)
+    {
+        float* d = buffer.getWritePointer (c);
+        for (int i = 0, ns = buffer.getNumSamples(); i < ns; ++i)
+            if (! std::isfinite (d[i]))
+                d[i] = 0.0f;
+    }
 }
 
 // ============================================================================
