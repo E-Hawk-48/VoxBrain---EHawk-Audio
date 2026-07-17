@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VoxBrain VERSION 0.2.4 LANGUAGES C CXX)
+project(VoxBrain VERSION 0.2.6 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -109,6 +109,7 @@ target_sources(VoxBrain PRIVATE
     Source/UI/UpdateBanner.cpp
     Source/UI/RackView.cpp
     Source/UI/PitchDisplay.cpp
+    Source/UI/ThemePanel.cpp
 )
 
 target_include_directories(VoxBrain PRIVATE Source)
@@ -131,6 +132,7 @@ target_compile_definitions(VoxBrain PUBLIC
 target_link_libraries(VoxBrain
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_gui_extra        # juce::ColourSelector for the theme customizer
         juce::juce_dsp
         juce::juce_cryptography     # SHA-256 integrity check for downloaded updates
     PUBLIC

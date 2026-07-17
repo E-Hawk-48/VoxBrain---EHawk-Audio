@@ -320,6 +320,22 @@ verified feature per session, same as #1.
   LEARN button, and RackView (the modular-workstation overlay — see Modules
   above; toggled by the header MODULES button). Editor default 1120×800.
   PresetBar's Save uses an async AlertWindow (deleteWhenDismissed) name prompt.
+  NEON REDESIGN (v0.2.6): `theme::` colours are now MUTABLE inline globals
+  (one shared def; change one → whole plugin recolours on repaint). Default =
+  Neon Red (accentWarm ff1e56) + Neon Purple (accent b14dff) on near-black violet
+  glass. Theme API (LookAndFeel.cpp): 8 built-in `schemes()` (Neon Red/Purple,
+  Ultraviolet, Vaporwave, Cyber Blue, Inferno, Toxic, Sunset, Mono),
+  `applyScheme`, `setPrimary/Secondary/Background` (bg derives panel/outline),
+  `setGlow`, `neonGradient` (purple→red), and persistence to
+  `<userAppData>/VoxBrain/theme.xml` (`load()/save()`). LookAndFeel draws with
+  layered neon glow (scaled by `theme::glow`) + dual-neon gradients on knobs/
+  toggles/buttons; SpectrumDisplay graph uses the neon gradient + glow + gradient
+  backdrop. `UI/ThemePanel.*` = live customizer (scheme presets, juce::
+  ColourSelector pickers for Primary/Secondary/Background via CallOutBox, glow
+  slider, reset) toggled by a header THEME button; on change → `refreshColours()`
+  + repaint + `theme::save()`. Editor calls `theme::load()` before styling.
+  Needs `juce::juce_gui_extra` (linked in CMake) for ColourSelector. VERIFIED:
+  LookAndFeel.cpp + ThemePanel.cpp + SpectrumDisplay.cpp syntax-compile vs JUCE.
   UI POLISH (verified): `VoxBrainLookAndFeel` refreshed — rotary knobs now have a
   gradient value arc + soft glow + domed radial-gradient cap + glowing pointer
   tip; buttons are glassy vertical gradients with a top highlight; toggle pills

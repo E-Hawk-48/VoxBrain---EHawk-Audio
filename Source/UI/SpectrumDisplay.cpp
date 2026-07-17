@@ -39,7 +39,9 @@ float SpectrumDisplay::binToX (int bin, float width) const
 void SpectrumDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    g.fillAll (theme::panel);
+    g.setGradientFill (juce::ColourGradient (theme::panel.brighter (0.04f), 0.0f, 0.0f,
+                                             theme::bg, 0.0f, bounds.getHeight(), false));
+    g.fillRect (bounds);
 
     // Grid lines at decades + octave marks
     g.setColour (theme::outline.withAlpha (0.5f));
@@ -74,23 +76,29 @@ void SpectrumDisplay::paint (juce::Graphics& g)
         return p;
     };
 
-    // Peak-hold ghost
-    g.setColour (theme::accent.withAlpha (0.18f));
+    // Peak-hold ghost (secondary neon)
+    g.setColour (theme::accentWarm.withAlpha (0.20f));
     g.strokePath (buildPath (peakHold), juce::PathStrokeType (1.0f));
 
-    // Live spectrum with gradient fill
+    // Live spectrum — neon gradient fill + glowing line
     auto live = buildPath (spectrum);
     juce::Path fill (live);
     fill.lineTo (bounds.getWidth(), bounds.getHeight());
     fill.lineTo (0.0f, bounds.getHeight());
     fill.closeSubPath();
 
-    juce::ColourGradient grad (theme::accent.withAlpha (0.30f), 0, 0,
-                               theme::accent.withAlpha (0.02f), 0, bounds.getHeight(), false);
+    juce::ColourGradient grad (theme::accent.withAlpha (0.34f), 0.0f, 0.0f,
+                               theme::accentWarm.withAlpha (0.05f), bounds.getWidth(), bounds.getHeight(), false);
     g.setGradientFill (grad);
     g.fillPath (fill);
-    g.setColour (theme::accent);
-    g.strokePath (live, juce::PathStrokeType (1.6f));
+
+    if (theme::glow > 0.0f)
+    {
+        g.setColour (theme::accent.withAlpha (0.28f * theme::glow));
+        g.strokePath (live, juce::PathStrokeType (4.5f, juce::PathStrokeType::curved));
+    }
+    g.setGradientFill (theme::neonGradient (bounds));
+    g.strokePath (live, juce::PathStrokeType (1.9f, juce::PathStrokeType::curved));
 
     // Readouts
     g.setColour (theme::text);

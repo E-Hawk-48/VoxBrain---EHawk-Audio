@@ -12,6 +12,8 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
       moduleStrip (p.apvts),
       rackView (p.apvts, p.getRack(), [&p] { return p.suggestModules(); })
 {
+    theme::load();                 // restore the user's saved colours before styling
+    lookAndFeel.refreshColours();
     setLookAndFeel (&lookAndFeel);
 
     learnButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
@@ -21,6 +23,22 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
     modulesButton.onClick = [this] { toggleRack(); };
     addAndMakeVisible (modulesButton);
+
+    themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+    themeButton.onClick = [this] { toggleTheme(); };
+    addAndMakeVisible (themeButton);
+
+    addChildComponent (themePanel);
+    themePanel.onClose = [this] { toggleTheme(); };
+    themePanel.onChanged = [this]
+    {
+        lookAndFeel.refreshColours();
+        learnButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
+        modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
+        themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+        theme::save();
+        repaint();
+    };
 
     addChildComponent (rackView);   // overlay, hidden until MODULES is clicked
     rackView.onClose = [this] { toggleRack(); };
@@ -98,6 +116,14 @@ void VoxBrainEditor::toggleRack()
     resized();
 }
 
+void VoxBrainEditor::toggleTheme()
+{
+    themeVisible = ! themeVisible;
+    themePanel.setVisible (themeVisible);
+    if (themeVisible) themePanel.toFront (true);
+    resized();
+}
+
 void VoxBrainEditor::timerCallback()
 {
     // Pulse the learn button while listening
@@ -146,6 +172,11 @@ void VoxBrainEditor::resized()
     learnButton.setBounds (header.removeFromRight (240));
     header.removeFromRight (8);
     modulesButton.setBounds (header.removeFromRight (120));
+    header.removeFromRight (8);
+    themeButton.setBounds (header.removeFromRight (90));
+
+    // Theme panel: a floating card, centred over the content.
+    themePanel.setBounds (getLocalBounds().withSizeKeepingCentre (400, 560));
 
     // The rack is a full-window overlay below the header.
     rackView.setBounds (area);

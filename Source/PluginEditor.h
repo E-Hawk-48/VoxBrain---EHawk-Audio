@@ -8,6 +8,7 @@
 #include "UI/UpdateBanner.h"
 #include "UI/RackView.h"
 #include "UI/PitchDisplay.h"
+#include "UI/ThemePanel.h"
 
 namespace vf
 {
@@ -32,12 +33,14 @@ private:
     void timerCallback() override;
     void learnClicked();
     void toggleRack();
+    void toggleTheme();
 
     VoxBrainProcessor& processor;
     VoxBrainLookAndFeel lookAndFeel;
 
     juce::TextButton learnButton { "LEARN" };
     juce::TextButton modulesButton { "MODULES" };
+    juce::TextButton themeButton { "THEME" };
     UpdateBanner updateBanner;
     SpectrumDisplay spectrum;
     PitchDisplay pitchDisplay;
@@ -45,7 +48,9 @@ private:
     AnalysisPanel analysisPanel;
     ModuleStrip moduleStrip;
     RackView rackView;
+    ThemePanel themePanel;
     bool rackVisible = false;
+    bool themeVisible = false;
 
     float pulsePhase = 0.0f;
 
