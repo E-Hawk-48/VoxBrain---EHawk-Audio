@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "Modules/ModuleRegistry.h"
 #include "Preset/FactoryPresetLibrary.h"
+#include "Reference/ReferencePreset.h"
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
 #include <cmath>    // std::isfinite for the output safety net
@@ -18,7 +19,7 @@ VoxBrainProcessor::VoxBrainProcessor()
     // Cache raw parameter pointers for lock-free audio-thread access
     for (const char* id : { inputGain, outputGain,
                             pitchOn, pitchKey, pitchScale, pitchSpeed, pitchAmount,
-                            pitchHumanize, pitchFormant,
+                            pitchHumanize, pitchFormant, pitchLatency,
                             gateOn, gateThreshold,
                             eqOn, eqHpfFreq, eqLowShelfGain, eqMudGain, eqMudFreq,
                             eqPresenceGain, eqPresenceFreq, eqAirGain,
@@ -98,6 +99,10 @@ void VoxBrainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     chain.prepare (spec);
     rack.prepare (spec);
     analysis.prepare (sampleRate, (int) spec.numChannels);
+    // Apply the saved retune latency mode up front so the reported latency is
+    // correct from the first block (avoids a host re-sync right after load).
+    if (auto* lm = apvts.getRawParameterValue (pitchLatency))
+        chain.getRetune().setLatencyMode ((int) lm->load());
     setLatencySamples (chain.getLatencySamples() + rack.latencySamples());
     resampleRatio = sampleRate / 16000.0;
     learnResampler.reset();
@@ -140,6 +145,7 @@ ChainParams VoxBrainProcessor::readChainParams() const
         rp.majorScale = major;
         rp.humanize   = v (pitchHumanize) * 0.01f;
         rp.formant    = v (pitchFormant);
+        rp.latencyMode = (int) v (pitchLatency);   // 0=Live,1=Balanced,2=Studio
         p.retune = rp;
     }
 
@@ -259,6 +265,15 @@ void VoxBrainProcessor::setLearning (bool shouldLearn)
 
 void VoxBrainProcessor::timerCallback()
 {
+    // Keep the host's latency compensation in sync when the retune latency mode
+    // (or the rack's latency) changes at runtime. Cheap comparison at 10 Hz;
+    // setLatencySamples is a no-op when the value is unchanged.
+    {
+        const int want = chain.getLatencySamples() + rack.latencySamples();
+        if (want != getLatencySamples())
+            setLatencySamples (want);
+    }
+
     if (! snapshotFresh.exchange (false))
         return;
 
@@ -407,6 +422,157 @@ void VoxBrainProcessor::applyPreset (const Preset& p)
         rack.fromXml (rackXml);
         delete rackXml;
     }
+}
+
+// ============================================================================
+//  Reference apply / A-B compare (phase 4). All message-thread.
+// ============================================================================
+bool VoxBrainProcessor::rackHasType (const juce::String& typeId) const
+{
+    for (const auto& n : rack.snapshot()) if (n.typeId == typeId) return true;
+    return false;
+}
+
+VoxBrainProcessor::RefState VoxBrainProcessor::captureRefState() const
+{
+    RefState s;
+    s.params = presets.capture();
+    if (auto x = rack.toXml()) s.rackXml = x->toString();
+    s.valid = true;
+    return s;
+}
+
+void VoxBrainProcessor::restoreRefState (const RefState& s)
+{
+    if (! s.valid) return;
+    presets.restore (s.params);
+    if (s.rackXml.isNotEmpty())
+        if (auto x = juce::parseXML (s.rackXml))
+            rack.fromXml (x.get());
+}
+
+void VoxBrainProcessor::captureRefOriginalIfNeeded()
+{
+    if (! haveRefOriginal)
+    {
+        refOriginal = captureRefState();
+        haveRefOriginal = true;
+        refShowingOriginal = false;
+    }
+}
+
+void VoxBrainProcessor::writeReferencePlan (const std::vector<refapply::Write>& plan)
+{
+    for (const auto& w : plan)
+        if (auto* p = apvts.getParameter (w.parameterId))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->convertTo0to1 (w.value));
+            p->endChangeGesture();
+        }
+}
+
+void VoxBrainProcessor::addRackInsertInternal (const ReferenceMatchBrain::RackInsertion& ins)
+{
+    if (rackHasType (ins.moduleTypeId)) return;   // never duplicate
+    rack.addModule (ins.moduleTypeId);            // added at its defaults
+}
+
+void VoxBrainProcessor::applyReferenceDecision (const ReferenceMatchBrain::Decision& d)
+{
+    captureRefOriginalIfNeeded();
+    presets.pushUndo ("Reference: " + d.area);
+    const refapply::LockPredicate lk = [this] (const juce::String& id) { return isModuleLocked (id); };
+    writeReferencePlan (refapply::planDecision (d, lk));
+    refApplied = captureRefState();
+    refShowingOriginal = false;
+    if (presets.onStateChanged) presets.onStateChanged();
+}
+
+void VoxBrainProcessor::applyReferenceMatch (const ReferenceMatchBrain::Result& m)
+{
+    captureRefOriginalIfNeeded();
+    presets.pushUndo ("Reference Match: " + m.presetName);
+    const refapply::LockPredicate lk = [this] (const juce::String& id) { return isModuleLocked (id); };
+    writeReferencePlan (refapply::planAll (m, lk));
+    for (const auto& ins : m.rackInserts) addRackInsertInternal (ins);
+    syncRackMacros();
+    refApplied = captureRefState();
+    refShowingOriginal = false;
+    if (presets.onStateChanged) presets.onStateChanged();
+}
+
+void VoxBrainProcessor::applyReferenceRackInsert (const ReferenceMatchBrain::RackInsertion& ins)
+{
+    captureRefOriginalIfNeeded();
+    presets.pushUndo ("Reference: add " + ins.name);
+    addRackInsertInternal (ins);
+    syncRackMacros();
+    refApplied = captureRefState();
+    refShowingOriginal = false;
+    if (presets.onStateChanged) presets.onStateChanged();
+}
+
+void VoxBrainProcessor::toggleReferenceCompare()
+{
+    if (! haveRefOriginal || ! refApplied.valid) return;
+    if (refShowingOriginal) { restoreRefState (refApplied);  refShowingOriginal = false; }
+    else                    { restoreRefState (refOriginal); refShowingOriginal = true;  }
+    if (presets.onStateChanged) presets.onStateChanged();
+}
+
+void VoxBrainProcessor::resetReferenceCompare() noexcept
+{
+    haveRefOriginal = false;
+    refApplied.valid = false;
+    refShowingOriginal = false;
+}
+
+// ---- Reference → preset / community share (phase 5) ------------------------
+Preset VoxBrainProcessor::buildReferencePreset (const ReferenceResult& r) const
+{
+    Preset p;
+    p.meta = refpreset::deriveMeta (r.profile, r.match, r.fileName);
+    p.meta.presetId = juce::Uuid().toString();
+
+    // Values = the AI's SUGGESTED chain (independent of what's applied right now).
+    for (const auto& d : r.match.decisions)
+        for (const auto& t : d.targets)
+            p.values[t.parameterId] = t.value;
+
+    // Rack = the suggested complementary modules (deduped), serialised to XML.
+    if (! r.match.rackInserts.empty())
+    {
+        mods::ModuleRack tmp;
+        for (const auto& ins : r.match.rackInserts)
+        {
+            bool has = false;
+            for (const auto& n : tmp.snapshot()) if (n.typeId == ins.moduleTypeId) has = true;
+            if (! has) tmp.addModule (ins.moduleTypeId);
+        }
+        if (auto x = tmp.toXml()) p.rackXml = std::move (x);
+    }
+
+    p.seal();   // content hash + timestamps (required by the marketplace)
+    return p;
+}
+
+Preset VoxBrainProcessor::saveReferenceAsPreset (const ReferenceResult& r)
+{
+    Preset p = buildReferencePreset (r);
+    presetLibrary.add (p);                                  // appears in the Preset Browser
+
+    auto dir = presets.userPresetDir();
+    dir.createDirectory();
+    const auto file = dir.getChildFile (juce::File::createLegalFileName (p.meta.name) + ".vbpreset");
+    p.save (file);                                          // persists across sessions
+    return p;
+}
+
+bool VoxBrainProcessor::shareReferenceToCommunity (const ReferenceResult& r, juce::String& errorOut)
+{
+    const Preset p = buildReferencePreset (r);
+    return marketplace.uploadPreset (p, errorOut);          // validates + adds as "community"
 }
 
 bool VoxBrainProcessor::isModuleLocked (const juce::String& paramId) const

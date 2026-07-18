@@ -40,6 +40,7 @@ struct RetuneParams
     float amount      = 1.0f;    // 0..1 correction depth
     float humanize    = 0.0f;    // 0..1 — preserve natural vibrato/expression
     float formant     = 0.0f;    // semitones, formant shift (0 = natural/preserved)
+    int   latencyMode = 2;       // 0=Live, 1=Balanced, 2=Studio (default = original)
 };
 
 class RetuneEngine
@@ -56,7 +57,22 @@ public:
     float getInputPitchHz()  const noexcept { return uiInHz.load(); }
     float getTargetPitchHz() const noexcept { return uiTargetHz.load(); }
 
+    // ---- latency modes ------------------------------------------------------
+    //  Live/Balanced/Studio trade reported latency against how low a pitch the
+    //  engine can track+reshape (a grain needs ~two periods of lookahead, so a
+    //  lower floor = more latency). Studio is the original, most accurate path.
+    struct LatencyConfig { float minHz; int grainMargin; int delaySamples; };
+    static LatencyConfig configForMode (int mode, double sampleRate);
+    /** Reported latency for a mode — pure, so the processor can report it to the
+        host without waiting for the audio thread to switch. */
+    static int latencyForMode (int mode, double sampleRate)
+        { return configForMode (mode, sampleRate).delaySamples; }
+    /** Set the active mode (message thread, e.g. prepareToPlay). No allocation. */
+    void setLatencyMode (int mode) { applyLatencyMode (mode); }
+
 private:
+    void applyLatencyMode (int mode);   // recompute active delay/floor; re-seat OLA
+
     // ---- pitch tracking -----------------------------------------------------
     void  pushAnalysis (float sample);
     float runYin();
@@ -81,7 +97,13 @@ private:
     // OLA output accumulation
     std::vector<std::vector<float>> olaBuf;        // [channel][pos]
     std::vector<float> winSum;                     // shared window sum
-    int delaySamples = 0;
+    int delaySamples = 0;                          // ACTIVE lookback (per mode)
+    int maxDelaySamples = 0;                       // buffers sized for this (Studio)
+
+    // Active latency mode (see configForMode). Studio by default.
+    int   activeMode        = 2;
+    float activeMinHz       = 65.0f;               // lowest pitch YIN will chase
+    int   activeGrainMargin = 192;                 // scheduling slack in the delay
 
     // Analysis (incremental YIN)
     int  anaWindow = 1536, anaHop = 384;
@@ -110,7 +132,7 @@ private:
 
     std::atomic<float> uiInHz { 0.0f }, uiTargetHz { 0.0f };
 
-    static constexpr float minHz = 65.0f, maxHz = 900.0f;
+    static constexpr float maxHz = 900.0f;
     static constexpr float yinThreshold = 0.18f;
 };
 } // namespace vf

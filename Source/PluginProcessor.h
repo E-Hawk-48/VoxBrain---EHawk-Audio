@@ -8,9 +8,12 @@
 #include "Preset/PresetManager.h"
 #include "Preset/PresetLibrary.h"
 #include "Preset/AiPresetGenerator.h"
+#include "Preset/Marketplace.h"
 #include "Update/UpdateChecker.h"
 #include "Modules/ModuleRack.h"
 #include "Modules/ModuleAdvisor.h"
+#include "Reference/ReferenceImport.h"
+#include "Reference/ReferenceApply.h"
 
 namespace vf
 {
@@ -67,6 +70,31 @@ public:
     UpdateChecker& getUpdater() noexcept                  { return updater; }
     mods::ModuleRack& getRack() noexcept                  { return rack; }
 
+    /** AI Reference Mix Analyzer — drag-drop file import + background analysis.
+        Owned here so an analysis survives the editor closing/reopening. */
+    ReferenceImport& getReferenceImport() noexcept        { return referenceImport; }
+
+    // ---- Reference apply / compare (phase 4) -------------------------------
+    /** Apply the whole suggested chain (params + rack inserts). One undo. */
+    void applyReferenceMatch (const ReferenceMatchBrain::Result& m);
+    /** Apply a single suggested decision. One undo. */
+    void applyReferenceDecision (const ReferenceMatchBrain::Decision& d);
+    /** Insert a single suggested complementary rack module. One undo. */
+    void applyReferenceRackInsert (const ReferenceMatchBrain::RackInsertion& ins);
+    /** Non-destructive A/B: flip between the pre-apply original and the applied
+        settings (full state incl. rack). Does nothing until something is applied. */
+    void toggleReferenceCompare();
+    void resetReferenceCompare() noexcept;          // call when a new reference lands
+    bool hasReferenceCompare() const noexcept        { return haveRefOriginal && refApplied.valid; }
+    bool referenceShowingOriginal() const noexcept   { return refShowingOriginal; }
+
+    // ---- Reference → preset / community share (phase 5) --------------------
+    /** Build a preset from the reference's suggested chain (params + rack +
+        analysis metadata), add it to the library and write a .vbpreset. */
+    Preset saveReferenceAsPreset (const ReferenceResult& r);
+    /** Build + upload the match to the (offline) community marketplace. */
+    bool   shareReferenceToCommunity (const ReferenceResult& r, juce::String& errorOut);
+
     /** Module-level AI recommendations from the last LEARN pass (message thread). */
     std::vector<mods::ModuleSuggestion> suggestModules() const;
 
@@ -94,12 +122,29 @@ private:
     void autoBuildRackFromAnalysis();
     void syncRackMacros();   // push each rack module's values into its slot macros
 
+    // Reference apply/compare internals ------------------------------------
+    struct RefState { PresetManager::Snapshot params; juce::String rackXml; bool valid = false; };
+    RefState captureRefState() const;
+    void     restoreRefState (const RefState& s);
+    void     captureRefOriginalIfNeeded();
+    void     writeReferencePlan (const std::vector<refapply::Write>& plan);
+    void     addRackInsertInternal (const ReferenceMatchBrain::RackInsertion& ins);
+    bool     rackHasType (const juce::String& typeId) const;
+    RefState refOriginal, refApplied;
+    bool     haveRefOriginal = false;
+    bool     refShowingOriginal = false;
+    Preset   buildReferencePreset (const ReferenceResult& r) const;
+
     AnalysisEngine analysis;
     VocalChain     chain;
     int            preparedBlockSize = 512;   // max block our internal buffers are sized for
     PresetManager  presets { apvts };   // declared after apvts → constructed after it
     PresetLibrary  presetLibrary;       // factory + user + AI + community index
+    LocalMarketplace marketplace { presetLibrary };   // offline community share
     UpdateChecker  updater;
+
+    // AI Reference Mix Analyzer (background decode + analysis; message/bg thread).
+    ReferenceImport referenceImport;
 
     // Modular rack (runs after the fixed chain; empty by default = passthrough).
     mods::ModuleRack rack;

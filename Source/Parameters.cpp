@@ -49,7 +49,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                 pct (pitchAmount,  "Correction",   100.0f),
                 pct (pitchHumanize,"Humanize",     0.0f),
                 std::make_unique<APF> (juce::ParameterID { pitchFormant, 1 }, "Formant",
-                                       Range { -5.0f, 5.0f, 0.1f }, 0.0f));
+                                       Range { -5.0f, 5.0f, 0.1f }, 0.0f),
+                // Retune latency vs low-note accuracy. Default Studio = the
+                // original engine (unchanged). Live roughly halves the delay.
+                std::make_unique<juce::AudioParameterChoice> (
+                    juce::ParameterID { pitchLatency, 1 }, "Retune Latency",
+                    juce::StringArray { "Live", "Balanced", "Studio" }, 2));
 
     // Gate
     layout.add (onOff (gateOn, "Gate", true),

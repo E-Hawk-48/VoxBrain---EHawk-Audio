@@ -102,6 +102,9 @@ target_sources(VoxBrain PRIVATE
     Source/Modules/ModulationModules.cpp
     Source/Modules/SpaceModules.cpp
     Source/Modules/AnalogModules.cpp
+    Source/Reference/ReferenceAnalyzer.cpp
+    Source/Reference/ReferenceMatchBrain.cpp
+    Source/Reference/ReferenceImport.cpp
     Source/UI/LookAndFeel.cpp
     Source/UI/SpectrumDisplay.cpp
     Source/UI/ModuleStrip.cpp
@@ -113,6 +116,8 @@ target_sources(VoxBrain PRIVATE
     Source/UI/ThemePanel.cpp
     Source/UI/PresetBrowser.cpp
     Source/UI/VocalDnaPanel.cpp
+    Source/UI/UiPrefs.cpp
+    Source/UI/ReferencePanel.cpp
 )
 
 target_include_directories(VoxBrain PRIVATE Source)

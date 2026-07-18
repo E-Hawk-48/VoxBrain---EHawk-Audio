@@ -25,10 +25,17 @@ void RetuneEngine::prepare (double sampleRate, int maxBlockSize, int numChannels
     anaWindow = std::max (512, (int) std::round (fs * 0.030));
     anaHop    = anaWindow / 4;
 
-    // Delay covers two max periods (grain lookback) + scheduling margin
-    delaySamples = (int) std::round (fs * 0.032) + 192;
+    // Buffers are always sized for the LARGEST configuration (Studio) so a
+    // runtime latency-mode switch needs no reallocation — it just uses a shorter
+    // active lookback into the same ring. Studio is the original engine.
+    const auto studio = configForMode (2, fs);
+    maxDelaySamples   = studio.delaySamples;
+    activeMode        = 2;
+    activeMinHz       = studio.minHz;
+    activeGrainMargin = studio.grainMargin;
+    delaySamples      = studio.delaySamples;
 
-    ringSize = nextPow2 ((int) std::round (fs * 0.12) + maxBlockSize + delaySamples);
+    ringSize = nextPow2 ((int) std::round (fs * 0.12) + maxBlockSize + maxDelaySamples);
 
     ring.assign   ((size_t) channels, std::vector<float> ((size_t) ringSize, 0.0f));
     olaBuf.assign ((size_t) channels, std::vector<float> ((size_t) ringSize, 0.0f));
@@ -61,6 +68,51 @@ void RetuneEngine::reset()
     lastSourceCentre = 0.0;
     currentRatio = 1.0f;
     gridValid = false;
+}
+
+// ============================================================================
+//  Latency modes
+// ============================================================================
+//  A grain is two pitch periods long and must be read ~one period ahead of the
+//  output, so the fixed lookback ≈ 2·(period of the lowest supported pitch) plus
+//  a small scheduling margin. Raising the low-pitch floor therefore lowers the
+//  latency. maxP = (delaySamples − grainMargin)/2 must stay ≥ ceil(fs/minHz).
+RetuneEngine::LatencyConfig RetuneEngine::configForMode (int mode, double sampleRate)
+{
+    switch (mode)
+    {
+        case 0: // Live — lowest latency (floor ≈ C3); great for tracking/perform
+        {
+            const int P = (int) std::ceil (sampleRate / 130.0);
+            return { 130.0f, 128, 2 * P + 128 };
+        }
+        case 1: // Balanced — middle ground (floor ≈ F#2)
+        {
+            const int P = (int) std::ceil (sampleRate / 90.0);
+            return { 90.0f, 128, 2 * P + 128 };
+        }
+        default: // Studio (2) — original engine, most accurate on low notes
+            return { 65.0f, 192, (int) std::round (sampleRate * 0.032) + 192 };
+    }
+}
+
+void RetuneEngine::applyLatencyMode (int mode)
+{
+    const auto cfg = configForMode (mode, fs);
+    activeMode        = mode < 0 || mode > 2 ? 2 : mode;
+    activeMinHz       = cfg.minHz;
+    activeGrainMargin = cfg.grainMargin;
+    // Never exceed the allocated buffers (Studio is the max, but clamp anyway).
+    delaySamples      = std::min (cfg.delaySamples, std::max (1, maxDelaySamples));
+
+    // Re-seat only the OLA/scheduler so grains scheduled under the OLD delay do
+    // not linger. The input ring is left intact — the delayed read is valid at
+    // every supported delay, so audio keeps flowing (no dropout on the switch).
+    for (auto& o : olaBuf) std::fill (o.begin(), o.end(), 0.0f);
+    std::fill (winSum.begin(), winSum.end(), 0.0f);
+    nextGrainOut     = (double) (writeAbs + 1);
+    lastSourceCentre = (double) (writeAbs - delaySamples);
+    gridValid        = false;
 }
 
 // ============================================================================
@@ -155,7 +207,7 @@ float RetuneEngine::runYin()
     for (int i = 0; i < n; ++i) energy += anaFrame[(size_t) i] * anaFrame[(size_t) i];
     if (energy / (float) n < 1.0e-7f) { f0Confidence = 0.0f; return 0.0f; }
 
-    const int maxTau = std::min (n / 2 - 1, (int) (fs / minHz));
+    const int maxTau = std::min (n / 2 - 1, (int) (fs / activeMinHz));
     const int minTau = std::max (2,         (int) (fs / maxHz));
 
     for (int tau = 0; tau <= maxTau; ++tau)
@@ -313,6 +365,11 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
     const int numCh = std::min (channels, buffer.getNumChannels());
     const int mask = ringSize - 1;
 
+    // Apply a latency-mode switch once, at a block boundary (no allocation). The
+    // host is told about the new latency separately, on the message thread.
+    if (p.latencyMode != activeMode)
+        applyLatencyMode (p.latencyMode);
+
     const float glide = p.speedMs <= 0.5f
                       ? 0.0f
                       : std::exp (-1.0f / ((float) fs * p.speedMs * 0.001f));
@@ -382,8 +439,8 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                                  : 0.999f * currentCents;   // ease to unity when unvoiced
             currentRatio = std::pow (2.0f, newCents / 1200.0f);
 
-            // 4. Fire due grains
-            const int P = juce::jlimit (32, (delaySamples - 192) / 2,
+            // 4. Fire due grains (max grain half-span scales with the active delay)
+            const int P = juce::jlimit (32, (delaySamples - activeGrainMargin) / 2,
                                         (int) std::round (smoothedPeriod));
 
             if (nextGrainOut < (double) n - (double) P)   // scheduler lagged

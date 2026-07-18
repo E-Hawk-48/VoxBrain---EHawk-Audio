@@ -12,8 +12,9 @@ class ModuleCard : public juce::Component,
                    private juce::AsyncUpdater
 {
 public:
-    struct KnobSpec  { juce::String paramId, label; };
-    struct ComboSpec { juce::String paramId, label; };
+    // `tip` = plain-language hover help; `advanced` = hidden in Simple mode.
+    struct KnobSpec  { juce::String paramId, label, tip; bool advanced = false; };
+    struct ComboSpec { juce::String paramId, label, tip; bool advanced = false; };
 
     ModuleCard (juce::AudioProcessorValueTreeState& apvts,
                 juce::String title, juce::String bypassParamId, juce::String lockParamId,
@@ -23,6 +24,9 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    /** Show/hide this card's advanced controls; re-lays out visible ones. */
+    void setSimpleMode (bool simple);
 
 private:
     void parameterChanged (const juce::String& id, float value) override;
@@ -45,6 +49,7 @@ private:
         juce::Slider slider;
         juce::Label  label;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+        bool advanced = false;
     };
     std::vector<std::unique_ptr<Knob>> knobList;
 
@@ -53,8 +58,11 @@ private:
         juce::ComboBox box;
         juce::Label    label;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
+        bool advanced = false;
     };
     std::vector<std::unique_ptr<Combo>> comboList;
+
+    bool simpleMode = false;
 };
 
 // ============================================================================
@@ -66,8 +74,12 @@ public:
     explicit ModuleStrip (juce::AudioProcessorValueTreeState& apvts);
     void resized() override;
 
+    /** Simple mode hides advanced whole-cards and each card's advanced knobs. */
+    void setSimpleMode (bool simple);
+
 private:
-    struct Entry { std::unique_ptr<ModuleCard> card; int row; float weight; };
+    struct Entry { std::unique_ptr<ModuleCard> card; int row; float weight; bool advancedCard = false; };
     std::vector<Entry> cards;
+    bool simpleMode = false;
 };
 } // namespace vf

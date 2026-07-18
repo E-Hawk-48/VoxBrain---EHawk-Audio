@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
+#include <cmath>
 
 namespace vf
 {
@@ -18,18 +19,22 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
                      [&p] { return p.generateAiPreset(); })
 {
     theme::load();                 // restore the user's saved colours before styling
+    uiprefs::load();               // restore Simple/Advanced + hover-help choice
     lookAndFeel.refreshColours();
     setLookAndFeel (&lookAndFeel);
 
     learnButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
+    learnButton.setTooltip ("Click, sing the section you want mixed, then click again — VoxBrain builds the whole chain for you.");
     learnButton.onClick = [this] { learnClicked(); };
     addAndMakeVisible (learnButton);
 
     modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
+    modulesButton.setTooltip ("Open the modular rack — add, reorder and customise extra processing modules.");
     modulesButton.onClick = [this] { toggleRack(); };
     addAndMakeVisible (modulesButton);
 
     presetsButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
+    presetsButton.setTooltip ("Browse, load, save and AI-generate presets.");
     presetsButton.onClick = [this] { togglePresets(); };
     addAndMakeVisible (presetsButton);
 
@@ -37,8 +42,65 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     presetBrowser.onClose = [this] { togglePresets(); };
 
     themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+    themeButton.setTooltip ("Recolour VoxBrain — choose a neon scheme or pick your own colours.");
     themeButton.onClick = [this] { toggleTheme(); };
     addAndMakeVisible (themeButton);
+
+    simpleButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+    simpleButton.setTooltip ("Switch between Simple (essentials only) and Advanced (all controls) views.");
+    simpleButton.onClick = [this] { toggleSimpleMode(); };
+    addAndMakeVisible (simpleButton);
+
+    helpButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+    helpButton.setTooltip ("Turn hover help on or off. When on, rest the mouse over any control for a plain-language tip.");
+    helpButton.onClick = [this] { toggleHelp(); };
+    addAndMakeVisible (helpButton);
+
+    referenceButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.65f));
+    referenceButton.setTooltip ("AI Reference Match — open the analyzer, then drag an audio file in (or Browse). "
+                                "The AI reverse-engineers its vocal production and suggests a chain. Your voice is never changed.");
+    referenceButton.onClick = [this] { toggleReference(); };
+    addAndMakeVisible (referenceButton);
+
+    addChildComponent (referencePanel);   // overlay, hidden until REFERENCE is clicked
+    referencePanel.onClose  = [this] { toggleReference(); };
+    referencePanel.onBrowse = [this] { openReferenceChooser(); };
+    referencePanel.onFile   = [this] (const juce::File& f) { startReference (f); };
+    referencePanel.onCancel = [this] { processor.getReferenceImport().cancelCurrent(); referencePanel.showDropZone(); };
+    referencePanel.onAcceptAll = [this]
+    {
+        if (referenceResult.ok) { processor.applyReferenceMatch (referenceResult.match); referencePanel.markAllAccepted(); }
+    };
+    referencePanel.onAcceptDecision = [this] (int i)
+    {
+        if (referenceResult.ok && i >= 0 && i < (int) referenceResult.match.decisions.size())
+            processor.applyReferenceDecision (referenceResult.match.decisions[(size_t) i]);
+    };
+    referencePanel.onAcceptInsert = [this] (int i)
+    {
+        if (referenceResult.ok && i >= 0 && i < (int) referenceResult.match.rackInserts.size())
+            processor.applyReferenceRackInsert (referenceResult.match.rackInserts[(size_t) i]);
+    };
+    referencePanel.onCompare = [this]
+    {
+        processor.toggleReferenceCompare();
+        referencePanel.setCompareShowingOriginal (processor.referenceShowingOriginal());
+    };
+    referencePanel.onUndo = [this] { processor.getPresets().undo(); };
+    referencePanel.onSavePreset = [this]
+    {
+        if (! referenceResult.ok) return;
+        const auto p = processor.saveReferenceAsPreset (referenceResult);
+        referencePanel.setSaveStatus (juce::String (juce::CharPointer_UTF8 ("\xe2\x9c\x93 Saved \"")) + p.meta.name + "\" \xe2\x80\x94 see PRESETS");
+    };
+    referencePanel.onShare = [this]
+    {
+        if (! referenceResult.ok) return;
+        juce::String err;
+        const bool ok = processor.shareReferenceToCommunity (referenceResult, err);
+        referencePanel.setSaveStatus (ok ? juce::String (juce::CharPointer_UTF8 ("\xe2\x9c\x93 Shared to Community"))
+                                         : "Share failed: " + err);
+    };
 
     addChildComponent (themePanel);
     themePanel.onClose = [this] { toggleTheme(); };
@@ -85,6 +147,8 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     {
         return processor.applyChatMessage (msg);
     };
+
+    applyUiPrefs();                // reflect the restored Simple/Advanced + help choice
 
     setResizable (true, true);
     setResizeLimits (900, 700, 2400, 1600);
@@ -146,8 +210,140 @@ void VoxBrainEditor::togglePresets()
     resized();
 }
 
+void VoxBrainEditor::toggleSimpleMode()
+{
+    uiprefs::simpleMode = ! uiprefs::simpleMode;
+    uiprefs::save();
+    applyUiPrefs();
+    resized();
+}
+
+void VoxBrainEditor::toggleHelp()
+{
+    uiprefs::tooltipsOn = ! uiprefs::tooltipsOn;
+    uiprefs::save();
+    applyUiPrefs();
+}
+
+void VoxBrainEditor::applyUiPrefs()
+{
+    // Simple/Advanced view
+    moduleStrip.setSimpleMode (uiprefs::simpleMode);
+    simpleButton.setButtonText (uiprefs::simpleMode ? "SIMPLE" : "ADVANCED");
+
+    // Hover help: creating the TooltipWindow activates every setTooltip in the
+    // plugin; destroying it disables them. Owned by the editor so it lives and
+    // dies with the window.
+    if (uiprefs::tooltipsOn)
+    {
+        if (tooltipWindow == nullptr)
+            tooltipWindow = std::make_unique<juce::TooltipWindow> (this, 550);
+    }
+    else
+    {
+        tooltipWindow.reset();
+    }
+    helpButton.setButtonText (uiprefs::tooltipsOn ? "HELP ON" : "HELP OFF");
+    helpButton.setColour (juce::TextButton::buttonColourId,
+                          uiprefs::tooltipsOn ? theme::accent.withAlpha (0.55f) : theme::panelLight);
+}
+
+// ============================================================================
+//  AI Reference Mix Analyzer — drag-drop + browse + result polling
+// ============================================================================
+namespace
+{
+    bool hasAudioExtension (const juce::String& path)
+    {
+        const auto ext = path.fromLastOccurrenceOf (".", false, true).toLowerCase();
+        return ext == "wav" || ext == "aif" || ext == "aiff" || ext == "flac"
+            || ext == "mp3" || ext == "ogg" || ext == "m4a" || ext == "aac" || ext == "wma";
+    }
+}
+
+bool VoxBrainEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& f : files) if (hasAudioExtension (f)) return true;
+    return false;
+}
+
+void VoxBrainEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    for (const auto& f : files)
+        if (hasAudioExtension (f)) { startReference (juce::File (f)); break; }
+}
+
+void VoxBrainEditor::openReferenceChooser()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Choose a reference vocal or song",
+        juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a;*.aac;*.wma");
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto f = fc.getResult();
+            if (f.existsAsFile()) startReference (f);
+        });
+}
+
+void VoxBrainEditor::toggleReference()
+{
+    referenceVisible = ! referenceVisible;
+    referencePanel.setVisible (referenceVisible);
+    if (referenceVisible)
+    {
+        if (! processor.getReferenceImport().isBusy() && ! referencePanel.hasResult())
+            referencePanel.showDropZone();
+        referencePanel.toFront (true);
+    }
+    referenceButton.setButtonText (referenceVisible ? juce::String (juce::CharPointer_UTF8 ("\xe2\x97\x82 MIXER"))
+                                                    : juce::String ("REFERENCE"));
+    resized();
+}
+
+void VoxBrainEditor::startReference (const juce::File& file)
+{
+    refFileName = file.getFileName();
+
+    // Open the analyzer (closing any other full-window overlay) so the result shows.
+    if (rackVisible)    toggleRack();
+    if (browserVisible) togglePresets();
+    if (themeVisible)   toggleTheme();
+    if (! referenceVisible) toggleReference();
+
+    referencePanel.setAnalyzing (refFileName,
+                                 juce::String (juce::CharPointer_UTF8 ("Loading\xe2\x80\xa6")), 0.0f);
+    processor.getReferenceImport().analyzeFile (file);
+}
+
+void VoxBrainEditor::pollReference()
+{
+    auto& imp = processor.getReferenceImport();
+
+    ReferenceResult res;
+    if (imp.takeResult (res))
+    {
+        referenceResult = res;                       // remember for the apply workflow
+        processor.resetReferenceCompare();           // fresh reference → fresh A/B baseline
+        referencePanel.setCompareShowingOriginal (false);
+        if (! referenceVisible) toggleReference();
+        referencePanel.showResult (res);
+        referenceButton.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x97\x82 MIXER")));
+        return;
+    }
+
+    if (imp.isBusy())
+    {
+        referencePanel.setAnalyzing (refFileName, imp.statusText(), imp.getProgress());
+        referenceButton.setButtonText (juce::String ((int) std::round (imp.getProgress() * 100.0f)) + "%");
+    }
+}
+
 void VoxBrainEditor::timerCallback()
 {
+    pollReference();
+
     // Pulse the learn button while listening
     if (processor.isLearning())
     {
@@ -215,9 +411,14 @@ void VoxBrainEditor::paint (juce::Graphics& g)
     g.drawText ("VOXBRAIN", header.translated (0, 0), juce::Justification::centredLeft);
     g.setColour (theme::text);
     g.drawText ("VOXBRAIN", header, juce::Justification::centredLeft);
-    g.setColour (theme::accent);
-    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("AI VOCAL ENGINEER", header.translated (186, 5), juce::Justification::centredLeft);
+    // The header now holds seven buttons; only show the decorative subtitle when
+    // the window is wide enough that it can't collide with the leftmost button.
+    if (getWidth() >= 1200)
+    {
+        g.setColour (theme::accent);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText ("AI VOCAL ENGINEER", header.translated (186, 5), juce::Justification::centredLeft);
+    }
 }
 
 void VoxBrainEditor::resized()
@@ -225,13 +426,19 @@ void VoxBrainEditor::resized()
     auto area = getLocalBounds();
 
     auto header = area.removeFromTop (52).reduced (16, 8);
-    learnButton.setBounds (header.removeFromRight (240));
+    learnButton.setBounds (header.removeFromRight (200));
     header.removeFromRight (8);
-    modulesButton.setBounds (header.removeFromRight (120));
+    modulesButton.setBounds (header.removeFromRight (106));
     header.removeFromRight (8);
-    themeButton.setBounds (header.removeFromRight (90));
+    presetsButton.setBounds (header.removeFromRight (96));
     header.removeFromRight (8);
-    presetsButton.setBounds (header.removeFromRight (110));
+    referenceButton.setBounds (header.removeFromRight (104));
+    header.removeFromRight (8);
+    themeButton.setBounds (header.removeFromRight (74));
+    header.removeFromRight (8);
+    simpleButton.setBounds (header.removeFromRight (96));
+    header.removeFromRight (8);
+    helpButton.setBounds (header.removeFromRight (74));
 
     // Theme panel: a floating card, centred over the content.
     themePanel.setBounds (getLocalBounds().withSizeKeepingCentre (420, 620));
@@ -243,6 +450,11 @@ void VoxBrainEditor::resized()
     rackView.setBounds (area);
     if (rackVisible)
         return;   // rack covers the mixer; skip laying the mixer out underneath
+
+    // The AI Reference Analyzer is a full-window overlay below the header.
+    referencePanel.setBounds (area);
+    if (referenceVisible)
+        return;
 
     if (updateBanner.isActive())
         updateBanner.setBounds (area.removeFromTop (34).reduced (10, 2));
