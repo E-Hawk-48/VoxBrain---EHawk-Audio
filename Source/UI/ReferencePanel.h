@@ -56,6 +56,8 @@ public:
     void showResult (const ReferenceResult& r);
     void showDropZone();
     bool hasResult() const noexcept { return haveResult; }
+    /** Whether the "isolate vocal" option is ticked (read when a file starts). */
+    bool isolateEnabled() const noexcept;
 
     /** Mark every suggestion accepted (visual) — call after Accept All. */
     void markAllAccepted() { reportView.markAllAccepted(); }
@@ -95,9 +97,10 @@ private:
     bool haveResult = false;
     juce::Rectangle<int> graphsBounds;   // set in resized(), used by paint()
 
-    juce::TextButton closeButton     { "Close" };
-    juce::TextButton browseButton    { "Browse\xe2\x80\xa6" };
-    juce::TextButton cancelButton    { "Cancel" };
+    juce::TextButton   closeButton     { "Close" };
+    juce::TextButton   browseButton    { "Browse\xe2\x80\xa6" };
+    juce::TextButton   cancelButton    { "Cancel" };
+    juce::ToggleButton isolateToggle   { "Isolate vocal (for full songs)" };
     juce::TextButton anotherButton   { "Analyze another" };
     juce::TextButton acceptAllButton { "Accept All" };
     juce::TextButton compareButton   { "A / B" };

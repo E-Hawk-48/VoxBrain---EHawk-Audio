@@ -46,8 +46,9 @@ public:
     ReferenceImport();
     ~ReferenceImport() override;
 
-    /** Start analysing `file` on the background thread (message thread call). */
-    void analyzeFile (const juce::File& file);
+    /** Start analysing `file` on the background thread (message thread call).
+        @param isolateVocal  centre-extract the vocal first (for full-mix songs). */
+    void analyzeFile (const juce::File& file, bool isolateVocal = false);
     /** Ask the running job to stop as soon as it can. */
     void cancelCurrent();
 
@@ -65,7 +66,8 @@ public:
     /** Synchronous decode + analyze + match. Also the unit-test entry point. */
     static ReferenceResult analyzeFileSync (const juce::File& file,
                                             std::function<void (float)> progress = {},
-                                            const std::atomic<bool>* cancel = nullptr);
+                                            const std::atomic<bool>* cancel = nullptr,
+                                            bool isolateVocal = false);
     /** Decode any supported audio file → float buffer (≤2 ch) + sample rate. */
     static bool decode (const juce::File& file, juce::AudioBuffer<float>& out,
                         double& sampleRate, juce::String& error);
@@ -85,6 +87,7 @@ private:
 
     std::mutex   jobMutex;
     juce::File   pendingFile;
+    bool         pendingIsolate = false;
 
     std::mutex      resultMutex;
     ReferenceResult finishedResult;

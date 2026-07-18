@@ -25,10 +25,11 @@ namespace vf
 struct ReferenceProfile
 {
     // ---- source meta --------------------------------------------------------
-    double sampleRate  = 44100.0;
-    int    channels    = 1;
-    double durationSec = 0.0;
-    bool   valid       = false;
+    double sampleRate   = 44100.0;
+    int    channels     = 1;
+    double durationSec  = 0.0;
+    bool   valid        = false;
+    bool   vocalIsolated = false;   // true = analysed a centre-extracted vocal
 
     // ---- level / dynamics / loudness ---------------------------------------
     float peakDb           = -100.0f;

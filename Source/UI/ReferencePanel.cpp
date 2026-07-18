@@ -208,9 +208,15 @@ ReferencePanel::ReferencePanel()
     saveButton.setTooltip ("Save this match (chain + rack + analysis metadata) as a preset — find it under PRESETS.");
     shareButton.setTooltip ("Share this match to the community marketplace.");
 
+    isolateToggle.setTooltip ("Turn on for a full song / instrumental mix: VoxBrain centre-extracts the vocal "
+                              "before analysing, so the chain matches the voice rather than the whole mix. "
+                              "Leave off for an acapella or vocal-only reference.");
+    isolateToggle.setColour (juce::ToggleButton::textColourId, theme::textDim);
+
     addAndMakeVisible (closeButton);
     addChildComponent (browseButton);
     addChildComponent (cancelButton);
+    addChildComponent (isolateToggle);
     addChildComponent (anotherButton);
     addChildComponent (acceptAllButton);
     addChildComponent (compareButton);
@@ -253,9 +259,12 @@ void ReferencePanel::setCompareShowingOriginal (bool showingOriginal)
 
 void ReferencePanel::setSaveStatus (const juce::String& text) { saveStatus = text; repaint(); }
 
+bool ReferencePanel::isolateEnabled() const noexcept { return isolateToggle.getToggleState(); }
+
 void ReferencePanel::applyView()
 {
     browseButton.setVisible   (view == View::DropZone);
+    isolateToggle.setVisible  (view == View::DropZone);
     cancelButton.setVisible   (view == View::Analyzing);
     const bool result = (view == View::Result);
     anotherButton.setVisible  (result);
@@ -319,6 +328,7 @@ void ReferencePanel::resized()
     else
     {
         browseButton.setBounds (getLocalBounds().withSizeKeepingCentre (150, 38).translated (0, 30));
+        isolateToggle.setBounds (getLocalBounds().withSizeKeepingCentre (280, 26).translated (0, 78));
     }
 }
 
@@ -360,8 +370,10 @@ void ReferencePanel::paint (juce::Graphics& g)
         {
             g.setColour (theme::textDim);
             g.setFont (juce::FontOptions (11.5f));
-            g.drawText ("Overall confidence " + juce::String ((int) std::round (result.match.overallConfidence * 100.0f))
-                        + "%   •   " + result.fileName, mid, juce::Justification::centredRight);
+            juce::String line = "Overall confidence " + juce::String ((int) std::round (result.match.overallConfidence * 100.0f)) + "%";
+            if (result.profile.vocalIsolated) line += juce::String (juce::CharPointer_UTF8 ("   \xc2\xb7   vocal isolated"));
+            line += juce::String (juce::CharPointer_UTF8 ("   \xc2\xb7   ")) + result.fileName;
+            g.drawText (line, mid, juce::Justification::centredRight);
         }
 
         auto gr = graphsBounds;

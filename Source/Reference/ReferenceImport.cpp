@@ -1,5 +1,6 @@
 #include "ReferenceImport.h"
 #include "ReferenceAnalyzer.h"
+#include "VocalIsolation.h"
 #include <cmath>
 
 namespace vf
@@ -54,7 +55,8 @@ juce::String ReferenceImport::signatureOf (const juce::File& f)
 // ============================================================================
 ReferenceResult ReferenceImport::analyzeFileSync (const juce::File& file,
                                                   std::function<void (float)> prog,
-                                                  const std::atomic<bool>* cancel)
+                                                  const std::atomic<bool>* cancel,
+                                                  bool isolateVocal)
 {
     ReferenceResult r;
     r.fileName = file.getFileName();
@@ -66,8 +68,18 @@ ReferenceResult ReferenceImport::analyzeFileSync (const juce::File& file,
     if (! decode (file, buf, sr, err)) { r.error = err; return r; }
     if (cancel != nullptr && cancel->load()) { r.error = "Cancelled."; return r; }
 
+    // Optional centre-extraction so a full mix is measured more like its vocal.
+    bool isolated = false;
+    if (isolateVocal && buf.getNumChannels() >= 2)
+    {
+        if (prog) prog (0.06f);
+        buf = VocalIsolation::isolateCenter (buf, sr);
+        isolated = true;
+    }
+
     auto ap = [&prog] (float f) { if (prog) prog (0.10f + 0.85f * f); };
     r.profile = ReferenceAnalyzer::analyze (buf, sr, ap, cancel);
+    r.profile.vocalIsolated = isolated;
     if (cancel != nullptr && cancel->load()) { r.error = "Cancelled."; return r; }
     if (! r.profile.valid) { r.error = "Could not analyse this file (too short or silent)."; return r; }
 
@@ -80,12 +92,12 @@ ReferenceResult ReferenceImport::analyzeFileSync (const juce::File& file,
 // ============================================================================
 //  Background job control
 // ============================================================================
-void ReferenceImport::analyzeFile (const juce::File& file)
+void ReferenceImport::analyzeFile (const juce::File& file, bool isolateVocal)
 {
     cancelCurrent();          // stop any in-flight analysis quickly…
     stopThread (3000);        // …and join it
     cancelFlag.store (false);
-    { std::lock_guard<std::mutex> l (jobMutex); pendingFile = file; }
+    { std::lock_guard<std::mutex> l (jobMutex); pendingFile = file; pendingIsolate = isolateVocal; }
     progress.store (0.0f);
     state.store (State::Loading);
     startThread();
@@ -95,11 +107,11 @@ void ReferenceImport::cancelCurrent() { cancelFlag.store (true); }
 
 void ReferenceImport::run()
 {
-    juce::File f;
-    { std::lock_guard<std::mutex> l (jobMutex); f = pendingFile; }
+    juce::File f; bool isolate = false;
+    { std::lock_guard<std::mutex> l (jobMutex); f = pendingFile; isolate = pendingIsolate; }
 
-    // Cache: identical file (path+modtime+size) → return the stored result.
-    const auto key = signatureOf (f);
+    // Cache: identical file (path+modtime+size+isolate) → return the stored result.
+    const auto key = signatureOf (f) + (isolate ? "|iso" : "");
     if (key == cacheKey && cacheResult.ok)
     {
         { std::lock_guard<std::mutex> l (resultMutex); finishedResult = cacheResult; resultReady = true; }
@@ -110,7 +122,7 @@ void ReferenceImport::run()
 
     state.store (State::Analyzing);
     auto prog = [this] (float p) { progress.store (juce::jlimit (0.0f, 1.0f, p)); };
-    ReferenceResult res = analyzeFileSync (f, prog, &cancelFlag);
+    ReferenceResult res = analyzeFileSync (f, prog, &cancelFlag, isolate);
 
     if (cancelFlag.load()) { state.store (State::Cancelled); return; }
     if (res.ok) { cacheKey = key; cacheResult = res; }

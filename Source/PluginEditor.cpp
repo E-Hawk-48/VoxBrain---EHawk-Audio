@@ -314,7 +314,7 @@ void VoxBrainEditor::startReference (const juce::File& file)
 
     referencePanel.setAnalyzing (refFileName,
                                  juce::String (juce::CharPointer_UTF8 ("Loading\xe2\x80\xa6")), 0.0f);
-    processor.getReferenceImport().analyzeFile (file);
+    processor.getReferenceImport().analyzeFile (file, referencePanel.isolateEnabled());
 }
 
 void VoxBrainEditor::pollReference()

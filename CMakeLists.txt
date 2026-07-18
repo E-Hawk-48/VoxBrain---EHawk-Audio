@@ -105,6 +105,7 @@ target_sources(VoxBrain PRIVATE
     Source/Reference/ReferenceAnalyzer.cpp
     Source/Reference/ReferenceMatchBrain.cpp
     Source/Reference/ReferenceImport.cpp
+    Source/Reference/VocalIsolation.cpp
     Source/UI/LookAndFeel.cpp
     Source/UI/SpectrumDisplay.cpp
     Source/UI/ModuleStrip.cpp
