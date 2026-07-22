@@ -2,6 +2,7 @@
 #include "Modules/ModuleRegistry.h"
 #include "Preset/FactoryPresetLibrary.h"
 #include "Reference/ReferencePreset.h"
+#include "Support/CrashLog.h"
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
 #include <cmath>    // std::isfinite for the output safety net
@@ -16,6 +17,8 @@ VoxBrainProcessor::VoxBrainProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", vf::param::createParameterLayout())
 {
+    vf::crashlog::install();   // field-crash diagnostics → <appData>/VoxBrain/crash.log
+
     // Cache raw parameter pointers for lock-free audio-thread access
     for (const char* id : { inputGain, outputGain,
                             pitchOn, pitchKey, pitchScale, pitchSpeed, pitchAmount,
@@ -51,6 +54,10 @@ VoxBrainProcessor::VoxBrainProcessor()
 
     // Load the built-in factory preset library into the ecosystem index.
     presetLibrary.addAll (FactoryPresetLibrary::build());
+
+    // Unified chain: start in the historical order (stages, then rack) so a
+    // fresh instance sounds exactly like it always did.
+    chainOrderMaster = ChainOrder::defaultOrder (rack.size());
 
     learn16k.resize ((size_t) learn16kCapacity, 0.0f);   // preallocated: no RT alloc
     startTimerHz (10);   // message-thread poll for finished learn passes
@@ -209,11 +216,14 @@ void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         }
     }
 
-    // Finalise a learn pass on the audio thread if the GUI requested a stop
+    // End of a LEARN pass. The audio thread ONLY stops the accumulation here —
+    // real-time safe. Building the snapshot (sorting ~65k values + allocating)
+    // happens on the message thread in timerCallback; doing it here blew the
+    // audio deadline the instant LEARN finished.
     if (learnStopRequested.exchange (false))
     {
-        pendingSnapshot = analysis.finishLearning();
-        snapshotFresh.store (true, std::memory_order_release);
+        analysis.stopLearning();
+        learnFinalizePending.store (true, std::memory_order_release);
     }
 
     // Process the fixed chain + rack in slices no larger than the block size we
@@ -227,12 +237,32 @@ void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const int  total = buffer.getNumSamples();
     const int  nch   = buffer.getNumChannels();
     const int  maxB  = std::max (1, preparedBlockSize);
+
+    refreshChainOrderCache();   // lock-free unless the user just reordered
+
     for (int off = 0; off < total; off += maxB)
     {
         const int len = std::min (maxB, total - off);
         juce::AudioBuffer<float> slice (buffer.getArrayOfWritePointers(), nch, off, len);
-        chain.process (slice, chainP);
-        rack.process  (slice, &rackAuto);
+
+        // ---- unified chain: fixed stages and rack modules in ONE order ----
+        // Input/output trim always bookend the chain; everything between is
+        // driven by chainOrderCache, so dragging a module in the UI genuinely
+        // changes the processing order.
+        chain.applyInputGain (slice, chainP);
+        {
+            mods::ModuleRack::ScopedProcess rackAccess (rack, &rackAuto);
+            int rackCursor = 0;
+            for (int i = 0; i < chainOrderCacheCount; ++i)
+            {
+                const auto& item = chainOrderCache[i];
+                if (item.isStage())
+                    chain.processStage (item.stage, slice, chainP);
+                else
+                    rackAccess.processNode (rackCursor++, slice);   // Nth token → Nth rack module
+            }
+        }
+        chain.applyOutputGain (slice, chainP);
     }
 
     // Output safety net: if any DSP stage ever produces a NaN/Inf (bad filter
@@ -253,6 +283,7 @@ void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 // ============================================================================
 void VoxBrainProcessor::setLearning (bool shouldLearn)
 {
+    vf::crashlog::step (shouldLearn ? "setLearning(start)" : "setLearning(stop)");
     if (shouldLearn)
     {
         learn16kLen.store (0);
@@ -272,6 +303,21 @@ void VoxBrainProcessor::timerCallback()
         const int want = chain.getLatencySamples() + rack.latencySamples();
         if (want != getLatencySamples())
             setLatencySamples (want);
+    }
+
+    // Keep the unified chain order in step with the rack. Modules can be added
+    // or removed from several places (rack UI, LEARN auto-build, reference
+    // accepts); healing here covers them all without each call site remembering.
+    syncChainOrderWithRack();
+
+    // Build the LEARN snapshot here (message thread) — the audio thread only
+    // stopped the accumulation. Safe: accumulation has ceased, so nothing on the
+    // audio thread is touching these buffers any more.
+    if (learnFinalizePending.exchange (false, std::memory_order_acquire))
+    {
+        vf::crashlog::step ("finalizeLearning");
+        pendingSnapshot = analysis.finalizeLearning();
+        snapshotFresh.store (true, std::memory_order_release);
     }
 
     if (! snapshotFresh.exchange (false))
@@ -315,6 +361,7 @@ void VoxBrainProcessor::timerCallback()
 void VoxBrainProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
                                          const juce::String& engineNote)
 {
+    vf::crashlog::step ("finishAutoMix");
     if (snapshot.keyRoot >= 0)
     {
         autoKeyRoot.store (snapshot.keyRoot);
@@ -357,6 +404,81 @@ juce::String VoxBrainProcessor::applyChatMessage (const juce::String& message)
 std::vector<mods::ModuleSuggestion> VoxBrainProcessor::suggestModules() const
 {
     return mods::ModuleAdvisor::suggest (lastSnapshot);
+}
+
+// ============================================================================
+//  Unified chain order
+// ============================================================================
+void VoxBrainProcessor::refreshChainOrderCache()
+{
+    // Audio thread. Only touches the lock when the order actually changed, and
+    // never blocks: if the message thread is mid-edit we simply keep playing the
+    // previous order for one more block.
+    const uint32_t v = chainOrderVersion.load (std::memory_order_acquire);
+    if (v == chainOrderCacheVersion && chainOrderCacheCount > 0)
+        return;
+
+    const juce::SpinLock::ScopedTryLockType sl (chainOrderLock);
+    if (! sl.isLocked())
+        return;
+
+    const int n = juce::jmin ((int) chainOrderMaster.size(), kMaxChainItems);
+    for (int i = 0; i < n; ++i)
+        chainOrderCache[i] = chainOrderMaster[(size_t) i];
+    chainOrderCacheCount   = n;
+    chainOrderCacheVersion = v;
+}
+
+std::vector<ChainItem> VoxBrainProcessor::getChainOrder() const
+{
+    const juce::SpinLock::ScopedLockType sl (chainOrderLock);
+    return chainOrderMaster;
+}
+
+void VoxBrainProcessor::setChainOrder (std::vector<ChainItem> order)
+{
+    ChainOrder::repair (order, rack.size());
+    {
+        const juce::SpinLock::ScopedLockType sl (chainOrderLock);
+        chainOrderMaster = std::move (order);
+    }
+    chainOrderVersion.fetch_add (1, std::memory_order_release);
+}
+
+void VoxBrainProcessor::moveChainItem (int from, int to)
+{
+    auto order = getChainOrder();
+    const int n = (int) order.size();
+    if (from < 0 || from >= n || to < 0 || to >= n || from == to) return;
+
+    const auto item = order[(size_t) from];
+    order.erase (order.begin() + from);
+    order.insert (order.begin() + juce::jlimit (0, (int) order.size(), to), item);
+    setChainOrder (std::move (order));
+}
+
+void VoxBrainProcessor::syncChainOrderWithRack()
+{
+    auto order = getChainOrder();
+    if (ChainOrder::rackTokenCount (order) == rack.size())
+        return;                            // already in step — nothing to do
+    setChainOrder (std::move (order));     // repair() adds/removes rack tokens
+}
+
+void VoxBrainProcessor::autoBuildRack()
+{
+    autoBuildRackFromAnalysis();          // proven default front-end (only when empty)
+
+    // …plus any advisor picks from the last LEARN that aren't in the rack yet.
+    for (const auto& s : suggestModules())
+    {
+        if (! mods::ModuleRegistry::instance().isImplemented (s.moduleId)) continue;
+        if (rackHasType (s.moduleId)) continue;
+        rack.addModule (s.moduleId);
+    }
+
+    syncRackMacros();
+    syncChainOrderWithRack();
 }
 
 void VoxBrainProcessor::syncRackMacros()
@@ -611,6 +733,13 @@ void VoxBrainProcessor::getStateInformation (juce::MemoryBlock& destData)
         // lives as a "Rack" child of the state tree; old builds simply ignore it.
         if (auto rackXml = rack.toXml())
             xml->addChildElement (rackXml.release());   // xml adopts ownership
+
+        // Save the unified chain order too, so a rearranged chain persists.
+        // Old builds ignore this child; new builds fall back to the default
+        // (historical) order when it's absent.
+        if (auto orderXml = ChainOrder::toXml (getChainOrder()))
+            xml->addChildElement (orderXml.release());
+
         copyXmlToBinary (*xml, destData);
     }
 }
@@ -627,6 +756,19 @@ void VoxBrainProcessor::setStateInformation (const void* data, int sizeInBytes)
                 rack.fromXml (rackXml);
                 xml->removeChildElement (rackXml, true);
             }
+
+            // Restore the unified chain order (repaired against the rack we just
+            // loaded). Absent → the historical order, so old sessions are safe.
+            if (auto* orderXml = xml->getChildByName ("ChainOrder"))
+            {
+                setChainOrder (ChainOrder::fromXml (orderXml, rack.size()));
+                xml->removeChildElement (orderXml, true);
+            }
+            else
+            {
+                setChainOrder (ChainOrder::defaultOrder (rack.size()));
+            }
+
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
         }
 }

@@ -99,8 +99,20 @@ public:
     void process (const juce::AudioBuffer<float>& buffer);
 
     void  startLearning();
-    /** Stops learning and finalises the snapshot. */
+
+    /** AUDIO THREAD, real-time safe: stop accumulating immediately. Nothing else
+        happens here — building the snapshot sorts tens of thousands of values and
+        allocates, which must never run inside the audio callback. */
+    void stopLearning() noexcept { learning.store (false); }
+
+    /** MESSAGE THREAD: build the snapshot from what was accumulated. Only call
+        this AFTER stopLearning(), so the audio thread is no longer touching the
+        accumulators. Heavy (sorting + allocation) by design. */
+    AnalysisSnapshot finalizeLearning();
+
+    /** Convenience for non-real-time callers (tests/offline): stop + finalise. */
     AnalysisSnapshot finishLearning();
+
     bool  isLearning() const noexcept { return learning.load(); }
 
     // ---- GUI feed (lock-free) ---------------------------------------------

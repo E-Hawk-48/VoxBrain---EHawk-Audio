@@ -43,6 +43,13 @@ public:
 
 private:
     struct Impl;
+   #if VB_HAS_ONNX && JUCE_WINDOWS
+    // Build the ONNX session with a C++ guard AND a Windows SEH guard, so a
+    // missing/mismatched/corrupt onnxruntime.dll can NEVER crash the host — it
+    // just falls back to DSP pitch analysis. Members so they can see Impl.
+    static Impl* buildSessionChecked (const juce::File& modelFile) noexcept;
+    static Impl* buildSessionSafe    (const juce::File& modelFile) noexcept;
+   #endif
     std::unique_ptr<Impl> impl;
     juce::String status;
 };

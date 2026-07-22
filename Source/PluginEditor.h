@@ -4,10 +4,10 @@
 #include "UI/SpectrumDisplay.h"
 #include "UI/VocalDnaPanel.h"
 #include "UI/ModuleStrip.h"
+#include "UI/ChainView.h"
 #include "UI/AnalysisPanel.h"
 #include "UI/PresetBar.h"
 #include "UI/UpdateBanner.h"
-#include "UI/RackView.h"
 #include "UI/PitchDisplay.h"
 #include "UI/ThemePanel.h"
 #include "UI/PresetBrowser.h"
@@ -41,7 +41,6 @@ public:
 private:
     void timerCallback() override;
     void learnClicked();
-    void toggleRack();
     void toggleTheme();
     void togglePresets();
     void toggleSimpleMode();
@@ -57,7 +56,6 @@ private:
     VoxBrainLookAndFeel lookAndFeel;
 
     juce::TextButton learnButton { "LEARN" };
-    juce::TextButton modulesButton { "MODULES" };
     juce::TextButton presetsButton { "PRESETS" };
     juce::TextButton themeButton { "THEME" };
     juce::TextButton simpleButton { "ADVANCED" };   // toggles Simple / Advanced view
@@ -74,12 +72,10 @@ private:
     PitchDisplay pitchDisplay;
     PresetBar presetBar;
     AnalysisPanel analysisPanel;
-    ModuleStrip moduleStrip;
-    RackView rackView;
+    ChainView chainView;          // unified main page (chain strip + focused module)
     ThemePanel themePanel;
     PresetBrowser presetBrowser;
     ReferencePanel referencePanel;
-    bool rackVisible = false;
     bool themeVisible = false;
     bool browserVisible = false;
     bool referenceVisible = false;

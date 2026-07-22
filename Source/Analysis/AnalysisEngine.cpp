@@ -192,7 +192,15 @@ void AnalysisEngine::startLearning()
 
 AnalysisSnapshot AnalysisEngine::finishLearning()
 {
-    learning = false;
+    stopLearning();
+    return finalizeLearning();
+}
+
+// NOTE: message thread ONLY. This sorts up to ~65k values and allocates; running
+// it inside the audio callback (as it used to) overran the real-time deadline by
+// orders of magnitude the moment LEARN finished, which can wedge an audio driver.
+AnalysisSnapshot AnalysisEngine::finalizeLearning()
+{
     AnalysisSnapshot s;
 
     if (sampleCount < (long long) fs)   // need at least 1 second of audio

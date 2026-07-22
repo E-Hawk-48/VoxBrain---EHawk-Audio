@@ -19,6 +19,31 @@ void ModuleRack::reset()
         if (n->module) n->module->reset();
 }
 
+void ModuleRack::applyAutomationLocked (const Automation& automation)
+{
+    // Map the host-automatable macro pool onto the modules (slot i → module i).
+    const int ns = juce::jmin ((int) nodes.size(), Automation::Slots);
+    for (int i = 0; i < ns; ++i)
+    {
+        if (nodes[(size_t) i]->module == nullptr) continue;
+        auto& ps = nodes[(size_t) i]->module->params();
+        const int np = juce::jmin ((int) ps.size(), Automation::Macros);
+        for (int m = 0; m < np; ++m)
+            ps[(size_t) m].value = ps[(size_t) m].min
+                + (ps[(size_t) m].max - ps[(size_t) m].min) * automation.macro[i][m];
+    }
+}
+
+void ModuleRack::runNodeLocked (Node& n, juce::AudioBuffer<float>& buffer)
+{
+    const double blockMs = (buffer.getNumSamples() / spec.sampleRate) * 1000.0;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    n.module->process (buffer);
+    const auto used = juce::Time::getMillisecondCounterHiRes() - t0;
+    const float pct = blockMs > 0.0 ? (float) (used / blockMs) * 100.0f : 0.0f;
+    n.cpu.store (n.cpu.load() * 0.9f + pct * 0.1f);   // smoothed
+}
+
 void ModuleRack::process (juce::AudioBuffer<float>& buffer, const Automation* automation)
 {
     // Non-blocking: if a structural edit holds the lock, skip this block.
@@ -29,39 +54,56 @@ void ModuleRack::process (juce::AudioBuffer<float>& buffer, const Automation* au
     if (automation != nullptr && ! automation->rackOn)
         return;   // rack master-bypassed → clean passthrough
 
-    // Map the host-automatable macro pool onto the modules (slot i → module i).
     if (automation != nullptr)
-    {
-        const int ns = juce::jmin ((int) nodes.size(), Automation::Slots);
-        for (int i = 0; i < ns; ++i)
-        {
-            if (nodes[(size_t) i]->module == nullptr) continue;
-            auto& ps = nodes[(size_t) i]->module->params();
-            const int np = juce::jmin ((int) ps.size(), Automation::Macros);
-            for (int m = 0; m < np; ++m)
-                ps[(size_t) m].value = ps[(size_t) m].min
-                    + (ps[(size_t) m].max - ps[(size_t) m].min) * automation->macro[i][m];
-        }
-    }
+        applyAutomationLocked (*automation);
 
     bool anySolo = false;
     for (auto& n : nodes) if (n->solo.load()) { anySolo = true; break; }
-
-    const double blockMs = (buffer.getNumSamples() / spec.sampleRate) * 1000.0;
 
     for (auto& n : nodes)
     {
         if (n->module == nullptr) continue;
         const bool active = anySolo ? n->solo.load() : ! n->bypass.load();
         if (! active) continue;                 // pass audio through untouched
-
-        const auto t0 = juce::Time::getMillisecondCounterHiRes();
-        n->module->process (buffer);
-        const auto used = juce::Time::getMillisecondCounterHiRes() - t0;
-
-        const float pct = blockMs > 0.0 ? (float) (used / blockMs) * 100.0f : 0.0f;
-        n->cpu.store (n->cpu.load() * 0.9f + pct * 0.1f);   // smoothed
+        runNodeLocked (*n, buffer);
     }
+}
+
+// ---------------------------------------------------------------------------
+//  ScopedProcess — one try-lock for the whole block, modules run individually
+//  so the unified chain can interleave them with the fixed VocalChain stages.
+// ---------------------------------------------------------------------------
+ModuleRack::ScopedProcess::ScopedProcess (ModuleRack& rackToUse, const Automation* automation)
+    : rack (rackToUse), sl (rackToUse.lock)
+{
+    locked = sl.isLocked();
+    if (! locked) return;
+
+    rackOn = (automation == nullptr) || automation->rackOn;
+    if (! rackOn) return;
+
+    if (automation != nullptr)
+        rack.applyAutomationLocked (*automation);
+
+    for (auto& n : rack.nodes)
+        if (n->solo.load()) { anySolo = true; break; }
+}
+
+int ModuleRack::ScopedProcess::size() const noexcept
+{
+    return locked ? (int) rack.nodes.size() : 0;
+}
+
+void ModuleRack::ScopedProcess::processNode (int index, juce::AudioBuffer<float>& buffer)
+{
+    if (! locked || ! rackOn) return;
+    if (index < 0 || index >= (int) rack.nodes.size()) return;
+
+    auto& n = *rack.nodes[(size_t) index];
+    if (n.module == nullptr) return;
+    const bool active = anySolo ? n.solo.load() : ! n.bypass.load();
+    if (! active) return;                       // pass audio through untouched
+    rack.runNodeLocked (n, buffer);
 }
 
 int ModuleRack::latencySamples() const

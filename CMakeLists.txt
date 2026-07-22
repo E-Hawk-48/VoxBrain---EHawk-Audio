@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VoxBrain VERSION 0.3.1 LANGUAGES C CXX)
+project(VoxBrain VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +102,7 @@ target_sources(VoxBrain PRIVATE
     Source/Modules/ModulationModules.cpp
     Source/Modules/SpaceModules.cpp
     Source/Modules/AnalogModules.cpp
+    Source/DSP/ChainOrder.cpp
     Source/Reference/ReferenceAnalyzer.cpp
     Source/Reference/ReferenceMatchBrain.cpp
     Source/Reference/ReferenceImport.cpp
@@ -109,6 +110,8 @@ target_sources(VoxBrain PRIVATE
     Source/UI/LookAndFeel.cpp
     Source/UI/SpectrumDisplay.cpp
     Source/UI/ModuleStrip.cpp
+    Source/UI/ModuleSpecs.cpp
+    Source/UI/ChainView.cpp
     Source/UI/AnalysisPanel.cpp
     Source/UI/PresetBar.cpp
     Source/UI/UpdateBanner.cpp

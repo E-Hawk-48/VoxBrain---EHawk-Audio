@@ -922,25 +922,95 @@ void VocalChain::reset()
     prepare (currentSpec);
 }
 
-void VocalChain::process (juce::AudioBuffer<float>& buffer, const ChainParams& p)
+// ---------------------------------------------------------------------------
+//  Stage identity (stable ids are saved in state — never rename)
+// ---------------------------------------------------------------------------
+const char* VocalChain::stageId (Stage s) noexcept
+{
+    switch (s)
+    {
+        case Stage::Retune: return "retune";
+        case Stage::Gate:   return "gate";
+        case Stage::Eq:     return "eq";
+        case Stage::DynEq:  return "dyneq";
+        case Stage::DeEss:  return "deess";
+        case Stage::Comp:   return "comp";
+        case Stage::MBand:  return "mband";
+        case Stage::Sat:    return "sat";
+        case Stage::Delay:  return "delay";
+        case Stage::Verb:   return "verb";
+        case Stage::Limit:  return "limit";
+    }
+    return "?";
+}
+
+const char* VocalChain::stageName (Stage s) noexcept
+{
+    switch (s)
+    {
+        case Stage::Retune: return "Pitch";
+        case Stage::Gate:   return "Gate";
+        case Stage::Eq:     return "EQ";
+        case Stage::DynEq:  return "Dynamic EQ";
+        case Stage::DeEss:  return "De-Esser";
+        case Stage::Comp:   return "Compressor";
+        case Stage::MBand:  return "Multiband";
+        case Stage::Sat:    return "Saturation";
+        case Stage::Delay:  return "Delay";
+        case Stage::Verb:   return "Reverb";
+        case Stage::Limit:  return "Limiter";
+    }
+    return "?";
+}
+
+bool VocalChain::stageFromId (const juce::String& id, Stage& out) noexcept
+{
+    for (int i = 0; i < kStageCount; ++i)
+    {
+        const auto s = (Stage) i;
+        if (id == stageId (s)) { out = s; return true; }
+    }
+    return false;
+}
+
+void VocalChain::processStage (Stage s, juce::AudioBuffer<float>& buffer, const ChainParams& p)
+{
+    switch (s)
+    {
+        case Stage::Retune: retune.process  (buffer, p.retune); break;
+        case Stage::Gate:   gate.process    (buffer, p.gate);   break;
+        case Stage::Eq:     eq.process      (buffer, p.eq);     break;
+        case Stage::DynEq:  dyneq.process   (buffer, p.dyneq);  break;
+        case Stage::DeEss:  deess.process   (buffer, p.deess);  break;
+        case Stage::Comp:   comp.process    (buffer, p.comp);   break;
+        case Stage::MBand:  mband.process   (buffer, p.mband);  break;
+        case Stage::Sat:    sat.process     (buffer, p.sat);    break;
+        case Stage::Delay:  delay.process   (buffer, p.delay);  break;
+        case Stage::Verb:   verb.process    (buffer, p.verb);   break;
+        case Stage::Limit:  limiter.process (buffer, p.limit);  break;
+    }
+}
+
+void VocalChain::applyInputGain (juce::AudioBuffer<float>& buffer, const ChainParams& p)
 {
     if (p.inputGainDb != 0.0f)
         buffer.applyGain (dbToGain (p.inputGainDb));
+}
 
-    retune.process  (buffer, p.retune);
-    gate.process    (buffer, p.gate);
-    eq.process      (buffer, p.eq);
-    dyneq.process   (buffer, p.dyneq);
-    deess.process   (buffer, p.deess);
-    comp.process    (buffer, p.comp);
-    mband.process   (buffer, p.mband);
-    sat.process     (buffer, p.sat);
-    delay.process   (buffer, p.delay);
-    verb.process    (buffer, p.verb);
-    limiter.process (buffer, p.limit);
-
+void VocalChain::applyOutputGain (juce::AudioBuffer<float>& buffer, const ChainParams& p)
+{
     if (p.outputGainDb != 0.0f)
         buffer.applyGain (dbToGain (p.outputGainDb));
+}
+
+void VocalChain::process (juce::AudioBuffer<float>& buffer, const ChainParams& p)
+{
+    // Default (historical) order == the enum order, so this is byte-identical
+    // to the original hard-wired sequence.
+    applyInputGain (buffer, p);
+    for (int i = 0; i < kStageCount; ++i)
+        processStage ((Stage) i, buffer, p);
+    applyOutputGain (buffer, p);
 }
 } // namespace vf
 

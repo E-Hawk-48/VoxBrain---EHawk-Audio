@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
+#include "Support/CrashLog.h"
 #include <cmath>
 
 namespace vf
@@ -11,8 +12,12 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
       dnaPanel (p.getAnalysis()),
       pitchDisplay (p.getChain().getRetune()),
       presetBar (p.getPresets()),
-      moduleStrip (p.apvts),
-      rackView (p.apvts, p.getRack(), [&p] { return p.suggestModules(); }),
+      chainView (p.apvts, p.getRack(),
+                 ChainView::Hooks {
+                     [&p] { return p.getChainOrder(); },
+                     [&p] (int from, int to) { p.moveChainItem (from, to); },
+                     [&p] { p.autoBuildRack(); },
+                     [&p] { return p.suggestModules(); } }),
       presetBrowser (p.getPresetLibrary(),
                      [&p] (const Preset& pr) { p.applyPreset (pr); },
                      [&p] { return p.captureCurrentAsPreset(); },
@@ -27,11 +32,6 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     learnButton.setTooltip ("Click, sing the section you want mixed, then click again — VoxBrain builds the whole chain for you.");
     learnButton.onClick = [this] { learnClicked(); };
     addAndMakeVisible (learnButton);
-
-    modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
-    modulesButton.setTooltip ("Open the modular rack — add, reorder and customise extra processing modules.");
-    modulesButton.onClick = [this] { toggleRack(); };
-    addAndMakeVisible (modulesButton);
 
     presetsButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
     presetsButton.setTooltip ("Browse, load, save and AI-generate presets.");
@@ -108,21 +108,19 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     {
         lookAndFeel.refreshColours();
         learnButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
-        modulesButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.85f));
+        presetsButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
         themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
         theme::save();
         repaint();
     };
 
-    addChildComponent (rackView);   // overlay, hidden until MODULES is clicked
-    rackView.onClose = [this] { toggleRack(); };
     addChildComponent (updateBanner);   // shows itself only when an update is pending
     addAndMakeVisible (spectrum);
     addAndMakeVisible (dnaPanel);
     addAndMakeVisible (pitchDisplay);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (analysisPanel);
-    addAndMakeVisible (moduleStrip);
+    addAndMakeVisible (chainView);
 
     processor.getUpdater().onStateChanged = [this] (UpdateChecker::Info i)
     {
@@ -137,7 +135,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
         analysisPanel.setResult (r.presetName, r.summary);
         learnButton.setButtonText ("LEARN");
         presetBar.refresh();
-        rackView.refreshAdvisor();     // update module suggestions from the new analysis
+        chainView.refresh();      // new analysis → refresh chain + AI module picks
     };
 
     // Refresh the toolbar whenever preset/undo/A-B state changes.
@@ -166,6 +164,7 @@ VoxBrainEditor::~VoxBrainEditor()
 
 void VoxBrainEditor::learnClicked()
 {
+    vf::crashlog::step ("learnClicked");
     if (processor.isLearning())
     {
         processor.setLearning (false);
@@ -178,19 +177,6 @@ void VoxBrainEditor::learnClicked()
         analysisPanel.setResult ("", "Learning… play the vocal section you want mixed, "
                                      "then click the button again.");
     }
-}
-
-void VoxBrainEditor::toggleRack()
-{
-    rackVisible = ! rackVisible;
-    rackView.setVisible (rackVisible);
-    if (rackVisible)
-    {
-        rackView.refreshAdvisor();
-        rackView.toFront (true);
-    }
-    modulesButton.setButtonText (rackVisible ? "◂ MIXER" : "MODULES");
-    resized();
 }
 
 void VoxBrainEditor::toggleTheme()
@@ -228,7 +214,7 @@ void VoxBrainEditor::toggleHelp()
 void VoxBrainEditor::applyUiPrefs()
 {
     // Simple/Advanced view
-    moduleStrip.setSimpleMode (uiprefs::simpleMode);
+    chainView.setSimpleMode (uiprefs::simpleMode);
     simpleButton.setButtonText (uiprefs::simpleMode ? "SIMPLE" : "ADVANCED");
 
     // Hover help: creating the TooltipWindow activates every setTooltip in the
@@ -307,7 +293,6 @@ void VoxBrainEditor::startReference (const juce::File& file)
     refFileName = file.getFileName();
 
     // Open the analyzer (closing any other full-window overlay) so the result shows.
-    if (rackVisible)    toggleRack();
     if (browserVisible) togglePresets();
     if (themeVisible)   toggleTheme();
     if (! referenceVisible) toggleReference();
@@ -342,6 +327,7 @@ void VoxBrainEditor::pollReference()
 
 void VoxBrainEditor::timerCallback()
 {
+    vf::crashlog::step ("editorTimer");
     pollReference();
 
     // Pulse the learn button while listening
@@ -426,11 +412,9 @@ void VoxBrainEditor::resized()
     auto area = getLocalBounds();
 
     auto header = area.removeFromTop (52).reduced (16, 8);
-    learnButton.setBounds (header.removeFromRight (200));
+    learnButton.setBounds (header.removeFromRight (210));
     header.removeFromRight (8);
-    modulesButton.setBounds (header.removeFromRight (106));
-    header.removeFromRight (8);
-    presetsButton.setBounds (header.removeFromRight (96));
+    presetsButton.setBounds (header.removeFromRight (104));
     header.removeFromRight (8);
     referenceButton.setBounds (header.removeFromRight (104));
     header.removeFromRight (8);
@@ -446,11 +430,6 @@ void VoxBrainEditor::resized()
     presetBrowser.setBounds (area);
     if (browserVisible) return;   // browser covers the mixer
 
-    // The rack is a full-window overlay below the header.
-    rackView.setBounds (area);
-    if (rackVisible)
-        return;   // rack covers the mixer; skip laying the mixer out underneath
-
     // The AI Reference Analyzer is a full-window overlay below the header.
     referencePanel.setBounds (area);
     if (referenceVisible)
@@ -460,8 +439,9 @@ void VoxBrainEditor::resized()
         updateBanner.setBounds (area.removeFromTop (34).reduced (10, 2));
 
     area.reduce (10, 0);
-    moduleStrip.setBounds (area.removeFromBottom (270));
-    analysisPanel.setBounds (area.removeFromBottom (170).reduced (0, 4));
+    // The unified chain (strip + focused module + add bar) is the main page.
+    chainView.setBounds (area.removeFromBottom (juce::jlimit (300, 460, area.getHeight() * 52 / 100)));
+    analysisPanel.setBounds (area.removeFromBottom (150).reduced (0, 4));
     presetBar.setBounds (area.removeFromBottom (36));
     pitchDisplay.setBounds (area.removeFromBottom (120).reduced (0, 4));
 

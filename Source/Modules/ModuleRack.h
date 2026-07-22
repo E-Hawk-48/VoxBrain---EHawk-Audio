@@ -58,6 +58,29 @@ public:
         applied to the modules (by slot index) before processing. */
     void process (juce::AudioBuffer<float>& buffer, const Automation* automation = nullptr);
 
+    // ------------------------------------------------------------------
+    //  ScopedProcess — block-scoped access for the UNIFIED (interleaved)
+    //  chain dispatcher. Rack modules can now sit between fixed VocalChain
+    //  stages, so the caller drives them one at a time instead of the rack
+    //  running as one lump. This try-locks ONCE for the whole block (same
+    //  non-blocking policy as process()) and applies macros + solo state up
+    //  front, then `processNode(i)` runs an individual module in place.
+    //  Real-time safe: no allocation, no blocking.
+    // ------------------------------------------------------------------
+    class ScopedProcess
+    {
+    public:
+        ScopedProcess (ModuleRack& rackToUse, const Automation* automation);
+        bool isLocked() const noexcept { return locked; }
+        int  size()     const noexcept;
+        void processNode (int index, juce::AudioBuffer<float>& buffer);
+
+    private:
+        ModuleRack& rack;
+        juce::SpinLock::ScopedTryLockType sl;
+        bool locked = false, rackOn = true, anySolo = false;
+    };
+
     /** Total added latency (sum of active modules) for host PDC. */
     int latencySamples() const;
 
@@ -87,6 +110,10 @@ public:
 private:
     Node* nodePtr (juce::StringRef instanceId);
     juce::String makeInstanceId (juce::StringRef typeId);
+    /** Map the host macro pool onto the modules. Caller must hold `lock`. */
+    void applyAutomationLocked (const Automation& automation);
+    /** Time one module's process() and fold it into its smoothed CPU meter. */
+    void runNodeLocked (Node& n, juce::AudioBuffer<float>& buffer);
 
     juce::dsp::ProcessSpec spec { 44100.0, 512, 2 };
     bool prepared = false;

@@ -45,8 +45,20 @@ namespace
         return juce::File (juce::String (path)).getParentDirectory();
     }
 
+    /** SEH-guard the ORT API bind. A mismatched or corrupt onnxruntime.dll can
+        make InitApi() (or the API it returns) ACCESS-VIOLATE instead of failing
+        cleanly — and an access violation is NOT a C++ exception, so try/catch is
+        useless against it. __try/__except catches it so we fall back to DSP. This
+        helper holds no C++ objects that need unwinding (required for __try). */
+    static bool sehInitApi() noexcept
+    {
+        __try { Ort::InitApi(); return true; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
+
     /** Loads onnxruntime.dll from the plugin's own folder and binds the ORT
-        API. Returns false (never throws/crashes) when the DLL is missing. */
+        API. Returns false (never throws/crashes) when the DLL is missing or a
+        version the plugin can't talk to. */
     bool ensureOrtLoaded()
     {
         static bool attempted = false, loaded = false;
@@ -63,8 +75,10 @@ namespace
         if (h == nullptr)
             return false;
 
-        // DLL is now in memory: the delay-load thunk will bind to it.
-        Ort::InitApi();
+        // DLL is now in memory: the delay-load thunk will bind to it. If that
+        // binding faults (wrong ABI/version), bail cleanly to DSP analysis.
+        if (! sehInitApi())
+            return false;
         loaded = true;
         return true;
     }
@@ -120,6 +134,33 @@ struct CrepeAnalyzer::Impl
 struct CrepeAnalyzer::Impl {};
 #endif
 
+#if VB_HAS_ONNX && JUCE_WINDOWS
+// Build the ORT session. Catches C++ exceptions internally; only a hard SEH
+// fault (incompatible DLL) escapes — caught by buildSessionSafe. Raw pointer so
+// it can be called from a __try function. Member → can see the private Impl.
+CrepeAnalyzer::Impl* CrepeAnalyzer::buildSessionChecked (const juce::File& modelFile) noexcept
+{
+    try
+    {
+        auto* p = new Impl();                    // constructs Ort::Env
+        if (p->load (modelFile))                 // constructs Ort::Session
+            return p;
+        delete p;
+    }
+    catch (...) {}                               // Ort::Exception etc.
+    return nullptr;
+}
+
+// SEH wrapper: an access violation from a corrupt/mismatched onnxruntime.dll is
+// caught here and turned into a clean "no session" instead of crashing the host.
+// No C++ unwinding objects live in this scope (required for __try).
+CrepeAnalyzer::Impl* CrepeAnalyzer::buildSessionSafe (const juce::File& modelFile) noexcept
+{
+    __try { return buildSessionChecked (modelFile); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
+}
+#endif
+
 // ============================================================================
 CrepeAnalyzer::CrepeAnalyzer()
 {
@@ -133,10 +174,21 @@ CrepeAnalyzer::CrepeAnalyzer()
    #if JUCE_WINDOWS
     if (! ensureOrtLoaded())
     {
-        status = "onnxruntime.dll not found next to the plugin - using DSP analysis";
+        status = "onnxruntime.dll missing/incompatible - using DSP analysis";
         return;
     }
-   #endif
+    // Fully SEH-guarded: a bad DLL can never crash the host — worst case we run
+    // the (perfectly good) DSP pitch analysis instead.
+    if (auto* built = buildSessionSafe (modelFile))
+    {
+        impl.reset (built);
+        status = "CREPE neural pitch model loaded";
+    }
+    else
+    {
+        status = "CREPE unavailable (onnxruntime.dll incompatible) - using DSP analysis";
+    }
+   #else
     try
     {
         auto candidate = std::make_unique<Impl>();
@@ -151,6 +203,7 @@ CrepeAnalyzer::CrepeAnalyzer()
         impl.reset();
         status = juce::String ("ONNX init failed: ") + e.what();
     }
+   #endif
 #else
     status = "Built without ONNX support";
 #endif

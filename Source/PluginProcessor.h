@@ -3,6 +3,7 @@
 #include "Parameters.h"
 #include "Analysis/AnalysisEngine.h"
 #include "DSP/VocalChain.h"
+#include "DSP/ChainOrder.h"
 #include "Brain/AutoMixBrain.h"
 #include "AI/CrepeAnalyzer.h"
 #include "Preset/PresetManager.h"
@@ -74,6 +75,19 @@ public:
         Owned here so an analysis survives the editor closing/reopening. */
     ReferenceImport& getReferenceImport() noexcept        { return referenceImport; }
 
+    // ---- Unified reorderable chain (message thread) ------------------------
+    /** The current chain order (fixed stages + rack tokens, in playing order). */
+    std::vector<ChainItem> getChainOrder() const;
+    /** Replace the order; it is repaired against the rack before taking effect. */
+    void setChainOrder (std::vector<ChainItem> order);
+    /** Drag-reorder helper: move the item at `from` so it sits at `to`. */
+    void moveChainItem (int from, int to);
+    /** Re-sync the order with the rack after modules are added/removed. */
+    void syncChainOrderWithRack();
+    /** User-triggered AI rack build: the proven default front-end (when the rack
+        is empty) plus any advisor picks from the last LEARN that aren't present. */
+    void autoBuildRack();
+
     // ---- Reference apply / compare (phase 4) -------------------------------
     /** Apply the whole suggested chain (params + rack inserts). One undo. */
     void applyReferenceMatch (const ReferenceMatchBrain::Result& m);
@@ -143,6 +157,20 @@ private:
     LocalMarketplace marketplace { presetLibrary };   // offline community share
     UpdateChecker  updater;
 
+    // ---- Unified chain order --------------------------------------------
+    //  Master copy lives on the message thread under `chainOrderLock`. The audio
+    //  thread keeps its OWN preallocated cache and refreshes it only when the
+    //  version changes AND the try-lock succeeds — so a reorder never blocks or
+    //  drops a block (worst case the old order plays for one more buffer).
+    static constexpr int kMaxChainItems = 64;
+    std::vector<ChainItem> chainOrderMaster;
+    juce::SpinLock         chainOrderLock;
+    std::atomic<uint32_t>  chainOrderVersion { 1 };
+    ChainItem              chainOrderCache[kMaxChainItems];
+    int                    chainOrderCacheCount = 0;
+    uint32_t               chainOrderCacheVersion = 0;
+    void refreshChainOrderCache();   // audio thread
+
     // AI Reference Mix Analyzer (background decode + analysis; message/bg thread).
     ReferenceImport referenceImport;
 
@@ -155,6 +183,9 @@ private:
 
     // Learn handshake: audio thread finalises snapshot → message thread applies
     std::atomic<bool> learnStopRequested { false };
+    // Audio thread sets this after stopping accumulation; the message-thread
+    // timer then builds the snapshot (heavy: sorting + allocation).
+    std::atomic<bool> learnFinalizePending { false };
     std::atomic<bool> snapshotFresh { false };
     AnalysisSnapshot pendingSnapshot;          // written on audio thread while
                                                // snapshotFresh is false, read after true

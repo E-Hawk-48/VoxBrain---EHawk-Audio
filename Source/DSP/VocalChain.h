@@ -293,9 +293,31 @@ private:
 class VocalChain
 {
 public:
+    // ------------------------------------------------------------------
+    //  The reorderable processing stages. The chain order is DATA-DRIVEN
+    //  (see DSP/ChainOrder.h) so the UI can rearrange them; the enum order
+    //  below is the historical/default order, so looping 0..kStageCount-1
+    //  reproduces the original hard-wired chain exactly.
+    // ------------------------------------------------------------------
+    enum class Stage { Retune = 0, Gate, Eq, DynEq, DeEss, Comp, MBand, Sat, Delay, Verb, Limit };
+    static constexpr int kStageCount = 11;
+
+    /** Stable id used in saved state (never rename). */
+    static const char* stageId (Stage s) noexcept;
+    /** Human-readable name for the UI. */
+    static const char* stageName (Stage s) noexcept;
+    /** Parse a stable id; returns false if unknown. */
+    static bool stageFromId (const juce::String& id, Stage& out) noexcept;
+
     void prepare (const juce::dsp::ProcessSpec& spec);
     void reset();
     void process (juce::AudioBuffer<float>& buffer, const ChainParams& p);
+
+    /** Run ONE stage — the unified (reorderable) dispatcher calls this. */
+    void processStage (Stage s, juce::AudioBuffer<float>& buffer, const ChainParams& p);
+    /** Input / output trim that bookend the chain (never reordered). */
+    void applyInputGain  (juce::AudioBuffer<float>& buffer, const ChainParams& p);
+    void applyOutputGain (juce::AudioBuffer<float>& buffer, const ChainParams& p);
 
     float getCompGainReductionDb()  const noexcept { return comp.getGainReductionDb(); }
     float getDeEssGainReductionDb() const noexcept { return deess.getGainReductionDb(); }
