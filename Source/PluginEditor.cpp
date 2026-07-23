@@ -15,7 +15,8 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
       chainView (p.apvts, p.getRack(),
                  ChainView::Hooks {
                      [&p] { return p.getChainOrder(); },
-                     [&p] (int from, int to) { p.moveChainItem (from, to); },
+                     [&p] (std::vector<ChainItem> order, juce::StringArray rackIds)
+                          { p.applyChainArrangement (std::move (order), rackIds); },
                      [&p] { p.autoBuildRack(); },
                      [&p] { return p.suggestModules(); } }),
       presetBrowser (p.getPresetLibrary(),

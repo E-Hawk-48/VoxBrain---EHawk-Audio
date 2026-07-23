@@ -457,6 +457,24 @@ void VoxBrainProcessor::moveChainItem (int from, int to)
     setChainOrder (std::move (order));
 }
 
+void VoxBrainProcessor::applyChainArrangement (std::vector<ChainItem> order,
+                                               const juce::StringArray& rackIdsInOrder)
+{
+    // 1. Reorder rack NODES so their order matches the visual order of rack rows.
+    //    Processing runs the Nth rack token onto the Nth rack node, so aligning
+    //    the node list with the on-screen order is what makes a rack-vs-rack drag
+    //    (or an insert-at-slot) genuinely change the sound. Placing each id at its
+    //    final index in turn realises any permutation.
+    for (int i = 0; i < rackIdsInOrder.size(); ++i)
+        rack.moveModule (rackIdsInOrder[i], i);
+
+    // 2. Keep every module's sound with its (possibly new) macro slot.
+    syncRackMacros();
+
+    // 3. Commit the stage/rack-token sequence (repaired against the rack).
+    setChainOrder (std::move (order));
+}
+
 void VoxBrainProcessor::syncChainOrderWithRack()
 {
     auto order = getChainOrder();

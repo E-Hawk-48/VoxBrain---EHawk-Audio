@@ -82,6 +82,16 @@ public:
     void setChainOrder (std::vector<ChainItem> order);
     /** Drag-reorder helper: move the item at `from` so it sits at `to`. */
     void moveChainItem (int from, int to);
+    /** Apply a full VISUAL arrangement of the chain in one atomic edit.
+        `order` is the stage/rack-token sequence (rack tokens are anonymous);
+        `rackIdsInOrder` lists the rack module instanceIds in that same visual
+        order, so the rack NODE list is reordered to match (the Nth rack token in
+        the chain runs the Nth rack node). This is what makes reordering rack
+        modules among themselves — and inserting one at a chosen slot — actually
+        change the sound instead of silently mapping to the wrong node. Macros
+        follow their modules; one version bump. */
+    void applyChainArrangement (std::vector<ChainItem> order,
+                                const juce::StringArray& rackIdsInOrder);
     /** Re-sync the order with the rack after modules are added/removed. */
     void syncChainOrderWithRack();
     /** User-triggered AI rack build: the proven default front-end (when the rack

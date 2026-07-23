@@ -31,7 +31,10 @@ public:
     struct Hooks
     {
         std::function<std::vector<ChainItem>()>  getOrder;
-        std::function<void (int, int)>           moveItem;      // from, to
+        // Apply a full visual arrangement: the stage/rack-token sequence plus the
+        // rack module instanceIds in that same visual order (so rack nodes are
+        // reordered to match). One atomic edit — used for drag-reorder AND insert.
+        std::function<void (std::vector<ChainItem>, juce::StringArray)> applyArrangement;
         std::function<void()>                    autoBuild;     // AI rack build
         std::function<std::vector<mods::ModuleSuggestion>()> suggest;   // AI advisor
     };
@@ -55,8 +58,9 @@ private:
     {
         ChainItem item;
         juce::String name, subtitle;
-        int  rackIndex = -1;          // >=0 when this row is a rack module
-        juce::Rectangle<int> bounds;  // within the strip's list area
+        int  rackIndex = -1;             // >=0 when this row is a rack module
+        juce::String instanceId;         // rack module id (empty for fixed stages)
+        juce::Rectangle<int> bounds;     // within the strip's list area
     };
 
     void timerCallback() override;
@@ -68,10 +72,16 @@ private:
     bool isRowActive (const Row& r) const;
     void addModuleByType (const juce::String& typeId);
     void refreshLibrary();
+    // Commit a reordered/inserted row list: build the token sequence + rack-id
+    // order and hand it to the processor, then refresh from the healed state.
+    void commitArrangement (const std::vector<Row>& newRows, int newSelected);
+    void layoutFlow();               // recompute the signal-flow box rects
+    int  flowBoxAt (juce::Point<int> p) const;
 
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp   (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
 
     juce::AudioProcessorValueTreeState& apvts;
     mods::ModuleRack& rack;
@@ -94,6 +104,10 @@ private:
     std::vector<std::unique_ptr<juce::TextButton>> libraryButtons;
 
     juce::Rectangle<int> stripArea, listArea, focusArea, addArea;
+    // Signal-flow ribbon (top of the focus area): one box per chain item, in
+    // processing order, wired left→right. Parallel to `rows`.
+    juce::Rectangle<int> flowArea;
+    std::vector<juce::Rectangle<int>> flowBoxes;
     bool simpleMode = false;
     bool showingSuggestions = false;   // add bar is showing AI picks vs search hits
 
