@@ -131,7 +131,12 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-//  Compressor — feed-forward RMS-ish peak detector, soft knee, parallel mix
+//  Compressor — program-dependent feed-forward vocal compressor.
+//  Detection blends a fast peak follower (transient control) with a short-window
+//  RMS follower (body/loudness) so it neither ignores fast peaks nor chatters on
+//  every sample. Release is program-dependent: the deeper the gain reduction, the
+//  slower it recovers, so brief dips snap back while sustained compression eases
+//  out smoothly (less pumping). Soft knee + parallel (dry/wet) mix + makeup.
 // ---------------------------------------------------------------------------
 class Compressor
 {
@@ -143,6 +148,9 @@ public:
 private:
     double fs = 44100.0;
     float envelopeDb = -100.0f;
+    float msEnv      = 0.0f;      // short-window mean-square (RMS) detector state
+    float lastGrAmt  = 0.0f;      // previous sample's gain reduction (dB), for
+                                  // program-dependent release
     juce::AudioBuffer<float> dryCopy;
     std::atomic<float> grDb { 0.0f };
 };

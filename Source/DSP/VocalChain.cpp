@@ -295,6 +295,8 @@ void Compressor::prepare (const juce::dsp::ProcessSpec& spec)
     fs = spec.sampleRate;
     dryCopy.setSize ((int) spec.numChannels, (int) spec.maximumBlockSize);
     envelopeDb = -100.0f;
+    msEnv      = 0.0f;
+    lastGrAmt  = 0.0f;
 }
 
 void Compressor::process (juce::AudioBuffer<float>& buffer, const CompParams& p)
@@ -310,32 +312,57 @@ void Compressor::process (juce::AudioBuffer<float>& buffer, const CompParams& p)
             dryCopy.copyFrom (c, 0, buffer, c, 0, numSamples);
 
     const float attCoef = tau (fs, p.attackMs);
-    const float relCoef = tau (fs, p.releaseMs);
+    // Program-dependent release: interpolate between the user's release (shallow
+    // GR → snappy) and 3× that (deep GR → smooth) using how hard we're clamping.
+    const float relFast = tau (fs, p.releaseMs);
+    const float relSlow = tau (fs, p.releaseMs * 3.0f);
+    const float msCoef  = tau (fs, 5.0f);        // ~5 ms RMS detector window
     const float kneeDb  = 6.0f;
     const float makeup  = dbToGain (p.makeupDb);
+    const float ratioSlope = 1.0f - 1.0f / juce::jmax (1.0f, p.ratio);
     float maxGr = 0.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        float peak = 0.0f;
+        // Program-dependent detector: blend a fast peak (transients) with a
+        // short-window RMS (body). Peak alone chatters and over-reacts to single
+        // samples; RMS alone is sluggish on consonants — the blend tracks vocal
+        // dynamics far more musically for the same threshold/ratio.
+        float peak = 0.0f, ms = 0.0f;
         for (int c = 0; c < numCh; ++c)
-            peak = std::max (peak, std::abs (buffer.getSample (c, i)));
-        const float inDb = gainToDb (std::max (peak, 1.0e-6f));
+        {
+            const float s = buffer.getSample (c, i);
+            peak = std::max (peak, std::abs (s));
+            ms  += s * s;
+        }
+        ms /= (float) juce::jmax (1, numCh);
+        msEnv = msCoef * msEnv + (1.0f - msCoef) * ms;
+        const float rms    = std::sqrt (std::max (msEnv, 0.0f));
+        const float detLin = 0.5f * peak + 0.5f * rms;
+        const float inDb   = gainToDb (std::max (detLin, 1.0e-6f));
 
-        envelopeDb = inDb > envelopeDb
-                   ? attCoef * envelopeDb + (1.0f - attCoef) * inDb
-                   : relCoef * envelopeDb + (1.0f - relCoef) * inDb;
+        if (inDb > envelopeDb)
+        {
+            envelopeDb = attCoef * envelopeDb + (1.0f - attCoef) * inDb;   // attack
+        }
+        else
+        {
+            const float depth   = juce::jlimit (0.0f, 1.0f, lastGrAmt / 12.0f);
+            const float relCoef = relFast + (relSlow - relFast) * depth;   // deeper → slower
+            envelopeDb = relCoef * envelopeDb + (1.0f - relCoef) * inDb;
+        }
 
         // Soft-knee gain computer
         float grAmt = 0.0f;
         const float over = envelopeDb - p.thresholdDb;
         if (over > kneeDb * 0.5f)
-            grAmt = over * (1.0f - 1.0f / p.ratio);
+            grAmt = over * ratioSlope;
         else if (over > -kneeDb * 0.5f)
         {
             const float x = over + kneeDb * 0.5f;
-            grAmt = (1.0f - 1.0f / p.ratio) * x * x / (2.0f * kneeDb);
+            grAmt = ratioSlope * x * x / (2.0f * kneeDb);
         }
+        lastGrAmt = grAmt;
 
         maxGr = std::max (maxGr, grAmt);
         const float g = dbToGain (-grAmt) * makeup;
