@@ -4,6 +4,12 @@
 
 namespace vf
 {
+namespace
+{
+    // Weak-voicing fallback ceiling (just past the 0.15 hard threshold).
+    constexpr float kPdFallbackThresh = 0.22f;
+}
+
 void PitchDetector::prepare (double sampleRate)
 {
     fs = sampleRate;
@@ -74,7 +80,8 @@ float PitchDetector::runYin()
     }
 
     // Absolute-threshold search
-    int tauEstimate = -1;
+    int  tauEstimate = -1;
+    bool fallback    = false;
     for (int tau = minTau; tau <= maxTau; ++tau)
     {
         if (diff[(size_t) tau] < yinThreshold)
@@ -86,9 +93,30 @@ float PitchDetector::runYin()
         }
     }
 
+    // Weak-voicing fallback (parity with the real-time engine): if nothing beat
+    // the hard threshold but the global minimum is still fairly periodic and a
+    // genuine local dip, take it with reduced confidence. Recovers soft/breathy
+    // notes for LEARN + the live pitch read-out without latching onto noise.
+    if (tauEstimate < 0)
+    {
+        int   bestTau = -1;
+        float bestVal = 1.0e9f;
+        for (int tau = minTau; tau <= maxTau; ++tau)
+            if (diff[(size_t) tau] < bestVal) { bestVal = diff[(size_t) tau]; bestTau = tau; }
+
+        const bool isLocalMin = bestTau > minTau && bestTau < maxTau
+                             && diff[(size_t) (bestTau - 1)] >= bestVal
+                             && diff[(size_t) (bestTau + 1)] >= bestVal;
+        if (bestTau > 0 && bestVal < kPdFallbackThresh && isLocalMin)
+        {
+            tauEstimate = bestTau;
+            fallback = true;
+        }
+    }
     if (tauEstimate < 0) { confidence = 0.0f; return 0.0f; }
 
-    confidence = 1.0f - diff[(size_t) tauEstimate];
+    const float periodicity = 1.0f - diff[(size_t) tauEstimate];
+    confidence = fallback ? periodicity * 0.7f : periodicity;
 
     // Parabolic interpolation around the minimum for sub-sample precision
     float betterTau = (float) tauEstimate;
@@ -99,7 +127,13 @@ float PitchDetector::runYin()
         const float s2 = diff[(size_t) (tauEstimate + 1)];
         const float denom = 2.0f * s1 - s2 - s0;
         if (std::abs (denom) > 1.0e-12f)
-            betterTau += 0.5f * (s2 - s0) / denom;   // parabola vertex offset
+        {
+            // Clamp the vertex offset to +/-1 bin: a near-flat parabola can throw
+            // it far outside, spiking F0. A real minimum's vertex is within a bin.
+            const float off = 0.5f * (s2 - s0) / denom;
+            if (std::abs (off) < 1.0f)
+                betterTau += off;
+        }
     }
 
     return betterTau > 0.0f ? (float) fs / betterTau : 0.0f;

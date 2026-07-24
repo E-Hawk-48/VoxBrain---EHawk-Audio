@@ -12,6 +12,11 @@ namespace
     // Natural major / natural minor pitch-class masks (bit 0 = root)
     constexpr int majorMask = 0b101010110101;   // 0 2 4 5 7 9 11
     constexpr int minorMask = 0b010110101101;   // 0 2 3 5 7 8 10
+
+    // Weak-voicing fallback: accept the global CMND minimum (when no bin crossed
+    // the absolute threshold) only if it is still this periodic. Just past the
+    // 0.18 hard threshold — recovers soft/edge frames without chasing noise.
+    constexpr float kFallbackThresh = 0.25f;
 }
 
 // ============================================================================
@@ -232,7 +237,8 @@ float RetuneEngine::runYin()
                               : 1.0f;
     }
 
-    int tauEstimate = -1;
+    int   tauEstimate = -1;
+    bool  fallback    = false;
     for (int tau = minTau; tau <= maxTau; ++tau)
     {
         if (yinDiff[(size_t) tau] < yinThreshold)
@@ -243,9 +249,33 @@ float RetuneEngine::runYin()
             break;
         }
     }
+
+    // Weak-voicing fallback: nothing crossed the absolute threshold, but the
+    // frame may still be a soft / breathy-but-pitched note (or a note on/off
+    // edge) that the hard threshold drops — heard as clipped syllables. If the
+    // GLOBAL minimum of the normalised difference is still fairly periodic, take
+    // it, but scale its confidence DOWN so it can carry a pitch value without
+    // ever forcing the voicing gate to flip on from silence/noise.
+    if (tauEstimate < 0)
+    {
+        int   bestTau = -1;
+        float bestVal = 1.0e9f;
+        for (int tau = minTau; tau <= maxTau; ++tau)
+            if (yinDiff[(size_t) tau] < bestVal) { bestVal = yinDiff[(size_t) tau]; bestTau = tau; }
+
+        const bool isLocalMin = bestTau > minTau && bestTau < maxTau
+                             && yinDiff[(size_t) (bestTau - 1)] >= bestVal
+                             && yinDiff[(size_t) (bestTau + 1)] >= bestVal;
+        if (bestTau > 0 && bestVal < kFallbackThresh && isLocalMin)
+        {
+            tauEstimate = bestTau;
+            fallback = true;
+        }
+    }
     if (tauEstimate < 0) { f0Confidence = 0.0f; return 0.0f; }
 
-    f0Confidence = 1.0f - yinDiff[(size_t) tauEstimate];
+    const float periodicity = 1.0f - yinDiff[(size_t) tauEstimate];
+    f0Confidence = fallback ? periodicity * 0.7f : periodicity;
 
     float betterTau = (float) tauEstimate;
     if (tauEstimate > 0 && tauEstimate < maxTau)
@@ -255,7 +285,15 @@ float RetuneEngine::runYin()
         const float s2 = yinDiff[(size_t) (tauEstimate + 1)];
         const float denom = 2.0f * s1 - s2 - s0;
         if (std::abs (denom) > 1.0e-12f)
-            betterTau += 0.5f * (s2 - s0) / denom;
+        {
+            // Clamp the sub-sample offset to the neighbouring bins. A near-flat
+            // parabola (tiny denom) can otherwise throw the vertex far outside
+            // [-1,1], producing an occasional wild F0 spike that reads as a pitch
+            // glitch. A true minimum's vertex always lies within one bin.
+            const float off = 0.5f * (s2 - s0) / denom;
+            if (std::abs (off) < 1.0f)
+                betterTau += off;
+        }
     }
     return betterTau > 0.0f ? (float) fs / betterTau : 0.0f;
 }
@@ -317,12 +355,28 @@ float RetuneEngine::quantizeTargetHz (float inputHz, const RetuneParams& p) cons
 // ============================================================================
 float RetuneEngine::readRing (int channel, double absPos) const
 {
+    // 4-point Catmull-Rom cubic interpolation. Linear interpolation of the ring
+    // colours every fractional grain read with high-frequency loss + a little
+    // aliasing (audible as a slightly gritty/edgy retune); cubic reconstructs the
+    // waveform far more faithfully at the same cost class. Bounded: the output is
+    // a fixed weighted combination of four neighbours (mild, energy-preserving
+    // overshoot only), and the ring is power-of-two masked so all indices are
+    // valid. The window taper drives grain-edge weights to ~0, so the one extra
+    // look-ahead sample (ip+2) at a grain's trailing edge is negligible.
     const int mask = ringSize - 1;
     const auto ip = (long long) std::floor (absPos);
-    const float frac = (float) (absPos - (double) ip);
-    const float a = ring[(size_t) channel][(size_t) (ip & mask)];
-    const float b = ring[(size_t) channel][(size_t) ((ip + 1) & mask)];
-    return a + frac * (b - a);
+    const float t = (float) (absPos - (double) ip);
+    const auto& r = ring[(size_t) channel];
+    const float xm1 = r[(size_t) ((ip - 1) & mask)];
+    const float x0  = r[(size_t) ( ip      & mask)];
+    const float x1  = r[(size_t) ((ip + 1) & mask)];
+    const float x2  = r[(size_t) ((ip + 2) & mask)];
+
+    const float t2 = t * t, t3 = t2 * t;
+    return 0.5f * ( (2.0f * x0)
+                  + (-xm1 + x1) * t
+                  + (2.0f * xm1 - 5.0f * x0 + 4.0f * x1 - x2) * t2
+                  + (-xm1 + 3.0f * x0 - 3.0f * x1 + x2) * t3 );
 }
 
 void RetuneEngine::fireGrain (double grainCentreOut, double sourceCentreAbs,
