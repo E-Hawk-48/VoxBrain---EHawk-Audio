@@ -525,24 +525,60 @@ void VoxBrainProcessor::autoBuildRackFromAnalysis()
     const auto& s = lastSnapshot;
     if (! s.valid) return;
 
-    auto addWith = [this] (const juce::String& id, std::vector<std::pair<const char*, float>> vals)
+    // The rack adds COMPLEMENTARY polish the fixed chain doesn't do, so nothing
+    // doubles up. Which modules those are — and how each one is set — now comes
+    // from the AI Engineer's knowledge base (Brain/ModuleIntelligence), which
+    // scores every module against THIS analysis and returns calibrated settings
+    // in natural units. Previously this was four modules with fixed numbers.
+    static const char* kFixedChainHandles[] =
     {
-        const auto iid = rack.addModule (id);
-        if (iid.isEmpty()) return;
-        if (auto* m = rack.find (iid))
-            for (const auto& [k, v] : vals) m->setValue (k, v);
+        // Already covered by the fixed VocalChain stages — never duplicate them.
+        "compressor", "gate", "de_esser", "dynamic_eq", "parametric_eq",
+        "limiter", "highpass", "lowpass", "vintage_eq",
     };
 
-    // Complementary polish that the fixed chain does NOT do (so nothing doubles):
-    if (s.crestDb > 8.0f && s.crestDb < 18.0f)
-        addWith ("transient_designer", { { "attack", 35.0f }, { "sustain", 0.0f } });   // punch
-    if (s.brightness < 0.55f)
-        addWith ("tape_sat", { { "drive", 22.0f }, { "tone", 55.0f }, { "mix", 30.0f } }); // warmth
-    if (s.brightness < 0.42f)
-        addWith ("exciter", { { "freq", 4000.0f }, { "amount", 45.0f }, { "mix", 28.0f } }); // air
-    if (s.voicedRatio > 0.5f && s.pitchStabilityCents < 60.0f && s.transientDensity < 4.0f)
-        addWith ("stereo_chorus", { { "rate", 0.5f }, { "depth", 40.0f }, { "mix", 26.0f }, { "width", 80.0f } }); // width
+    int added = 0;
+    for (const auto& rec : ModuleIntelligence::recommend (s))
+    {
+        if (added >= 4) break;                       // keep the auto rack focused
+        if (rec.need < ModuleIntelligence::kInsertThreshold) break;   // ranked: rest are weaker
+        if (! mods::ModuleRegistry::instance().isImplemented (rec.moduleId)) continue;
 
+        bool handledByChain = false;
+        for (const char* h : kFixedChainHandles)
+            if (rec.moduleId == h) { handledByChain = true; break; }
+        if (handledByChain || rackHasType (rec.moduleId)) continue;
+
+        const auto iid = rack.addModule (rec.moduleId);
+        if (iid.isEmpty()) continue;
+        if (auto* m = rack.find (iid))
+            for (const auto& st : rec.settings)
+                m->setValue (st.paramId, st.value);   // dialled to THIS vocal
+        ++added;
+    }
+
+    syncRackMacros();
+}
+
+void VoxBrainProcessor::aiDialRackModule (const juce::String& instanceId)
+{
+    // "Set this module up for my voice" — works on ANY module in the rack,
+    // including one the user inserted by hand, using the same knowledge base
+    // LEARN uses. Undoable as a single step.
+    if (! lastSnapshot.valid) return;
+
+    juce::String typeId;
+    for (const auto& n : rack.snapshot())
+        if (n.instanceId == instanceId) { typeId = n.typeId; break; }
+    if (typeId.isEmpty() || ! ModuleIntelligence::knows (typeId)) return;
+
+    const auto rec = ModuleIntelligence::dialFor (typeId, lastSnapshot);
+    if (rec.settings.empty()) return;
+
+    presets.pushUndo ("AI dial: " + rec.moduleName);
+    if (auto* m = rack.find (instanceId))
+        for (const auto& st : rec.settings)
+            m->setValue (st.paramId, st.value);
     syncRackMacros();
 }
 

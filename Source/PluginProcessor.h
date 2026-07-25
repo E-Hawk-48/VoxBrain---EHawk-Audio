@@ -5,6 +5,7 @@
 #include "DSP/VocalChain.h"
 #include "DSP/ChainOrder.h"
 #include "Brain/AutoMixBrain.h"
+#include "Brain/ModuleIntelligence.h"
 #include "AI/CrepeAnalyzer.h"
 #include "Preset/PresetManager.h"
 #include "Preset/PresetLibrary.h"
@@ -97,6 +98,10 @@ public:
     /** User-triggered AI rack build: the proven default front-end (when the rack
         is empty) plus any advisor picks from the last LEARN that aren't present. */
     void autoBuildRack();
+    /** "Set this module up for my voice" — re-dial ANY rack module (including one
+        the user inserted by hand) from the last LEARN analysis, using the AI
+        Engineer's knowledge base. One undo step. No-op without a valid analysis. */
+    void aiDialRackModule (const juce::String& instanceId);
 
     // ---- Reference apply / compare (phase 4) -------------------------------
     /** Apply the whole suggested chain (params + rack inserts). One undo. */

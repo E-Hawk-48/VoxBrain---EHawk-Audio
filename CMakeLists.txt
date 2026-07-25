@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VoxBrain VERSION 0.4.4 LANGUAGES C CXX)
+project(VoxBrain VERSION 0.4.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -82,6 +82,7 @@ target_sources(VoxBrain PRIVATE
     Source/DSP/VocalChain.cpp
     Source/DSP/RetuneEngine.cpp
     Source/Brain/AutoMixBrain.cpp
+    Source/Brain/ModuleIntelligence.cpp
     Source/AI/CrepeAnalyzer.cpp
     Source/Chat/ChatEngine.cpp
     Source/Preset/PresetManager.cpp
