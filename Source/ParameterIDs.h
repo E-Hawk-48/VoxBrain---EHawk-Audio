@@ -26,6 +26,16 @@ namespace vf::param
     inline constexpr auto pitchFormant  = "pitch_formant";  // semitones formant shift
     inline constexpr auto pitchLatency  = "pitch_latency";  // choice: Live/Balanced/Studio
 
+    // ---- Pro pitch controls (musical intelligence; see DSP/NoteIntelligence) --
+    inline constexpr auto pitchFlex        = "pitch_flex";        // % natural-deviation tolerance
+    inline constexpr auto pitchVibrato     = "pitch_vibrato";     // % vibrato preservation
+    inline constexpr auto pitchTransition  = "pitch_transition";  // % slide/bend smoothing
+    inline constexpr auto pitchDrift       = "pitch_drift";       // % long-term drift correction
+    inline constexpr auto pitchSensitivity = "pitch_sensitivity"; // % tracking sensitivity
+    inline constexpr auto pitchHardTune    = "pitch_hardtune";    // % macro → instant snap
+    inline constexpr auto pitchSnap        = "pitch_snap";        // cents dead-zone
+    inline constexpr auto pitchHQ          = "pitch_hq";          // bool: HQ render mode
+
     // ---- Gate / Expander ---------------------------------------------------
     inline constexpr auto gateOn        = "gate_on";
     inline constexpr auto gateThreshold = "gate_threshold";

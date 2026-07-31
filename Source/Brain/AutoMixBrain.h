@@ -35,6 +35,13 @@ public:
     /** The vocal style the brain infers from the analysis (Rap/Pop/R&B/…). */
     static juce::String detectedStyle (const AnalysisSnapshot& s);
 
+    /** The specific GENRE profile LEARN starts from (e.g. "Drill", "Melodic
+        Rap", "Alt R&B") — a refinement of the broad style, used as the chain's
+        aesthetic foundation before the corrective rules refine it. */
+    static juce::String detectedGenre   (const AnalysisSnapshot& s);
+    /** Stable id of the same profile (see Brain/GenreProfiles). */
+    static juce::String detectedGenreId (const AnalysisSnapshot& s);
+
 private:
     static juce::String generatePresetName (const AnalysisSnapshot& s);
     static juce::String buildSummary (const AnalysisSnapshot& s, const std::vector<Decision>& d);

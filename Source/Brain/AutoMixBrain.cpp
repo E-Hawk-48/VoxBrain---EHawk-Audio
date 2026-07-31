@@ -1,5 +1,9 @@
 #include "AutoMixBrain.h"
-#include "../Parameters.h"
+// Only the stable parameter-ID strings are needed here — NOT the APVTS layout.
+// Including ParameterIDs.h instead of Parameters.h keeps the brain headless
+// (no juce_audio_processors/GUI), which is what makes it unit-testable offline.
+#include "../ParameterIDs.h"
+#include "GenreProfiles.h"
 #include <cmath>
 
 namespace vf
@@ -48,6 +52,43 @@ namespace
             case Style::Spoken: return "Spoken";
         }
         return "Vocal";
+    }
+
+    // ------------------------------------------------------------------
+    //  Style → GENRE PROFILE. The inferred style is a broad idiom; the genre
+    //  table (Brain/GenreProfiles) holds the actual production aesthetic —
+    //  saturation model, reverb algorithm, tuning character, delay feel.
+    //  Mapping one to the other lets LEARN start from the right aesthetic
+    //  instead of a neutral chain.
+    //
+    //  The sub-genre refinements below are deliberately CONSERVATIVE. Without
+    //  tempo or the instrumental we cannot honestly tell Trap from Boom Bap, so
+    //  we only split where the vocal itself carries the evidence:
+    //    * a rap delivery that is genuinely sung  → Melodic Rap
+    //    * a rap delivery with a very dark tone   → Drill
+    //    * a sustained R&B take that is dark AND breathy → Alt R&B
+    //  Everything else stays on the family's canonical profile.
+    // ------------------------------------------------------------------
+    juce::String genreIdFor (Style st, const AnalysisSnapshot& s)
+    {
+        switch (st)
+        {
+            case Style::Rap:
+                if (s.voicedRatio > 0.45f)                  return "melodic_rap";
+                if (s.brightness < 0.34f)                   return "drill";
+                return "modern_rap";
+
+            case Style::RnB:
+                if (s.brightness < 0.38f
+                    && (s.dna.valid ? s.dna.breathiness : 0.0f) > 0.5f) return "alt_rnb";
+                return "rnb";
+
+            case Style::Pop:    return "pop";
+            case Style::Rock:   return "rock";
+            case Style::Ballad: return "ballad";
+            case Style::Spoken: return "podcast";
+        }
+        return "pop";
     }
 
     // ------------------------------------------------------------------
@@ -120,6 +161,34 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     const float stagedNoise = s.noiseFloorDb + gainTrim;
 
     // ------------------------------------------------------------------
+    // 1a. GENRE FOUNDATION — start from the aesthetic of the detected style
+    //     rather than from a neutral chain.
+    //
+    //     Ordering matters and is load-bearing: decisions are applied IN ORDER
+    //     and a later one wins, so laying the genre template down FIRST means
+    //     every corrective rule below still overrides it wherever the analysis
+    //     actually determines a value (an unpitched take still ends with pitch
+    //     correction off, a noisy take still gets its measured gate threshold).
+    //     What survives is exactly the aesthetic the measurements DON'T dictate:
+    //     saturation model, reverb algorithm/size, delay feel, tuning character.
+    // ------------------------------------------------------------------
+    const juce::String genreId = genreIdFor (style, s);
+    const GenreProfile* genre = GenreProfiles::byId (genreId);
+    if (genre != nullptr)
+    {
+        bool first = true;
+        for (const auto& t : genre->targets)
+        {
+            add (t.paramId, t.value,
+                 first ? ("Starting from the " + genre->name + " template (" + genre->family
+                          + "): " + genre->sound
+                          + " I'll refine it from your actual measurements below.")
+                       : juce::String());
+            first = false;
+        }
+    }
+
+    // ------------------------------------------------------------------
     // 1b. PITCH CORRECTION — only for pitched material; tightness scales
     //     with how much the performance actually drifts.
     // ------------------------------------------------------------------
@@ -129,13 +198,40 @@ AutoMixBrain::Result AutoMixBrain::computeChain (const AnalysisSnapshot& s)
     {
         add (pitchOn, 1.0f, "");
 
-        if (s.keyRoot >= 0 && s.keyConfidence > 0.3f)
+        // The detector reports a MODE, not just major/minor, and its scaleType
+        // maps straight onto the Scale menu. This matters musically: tuning a
+        // Phrygian or Dorian melody to plain minor flattens the one interval
+        // that defines the style — the ♭2 in Drill/Trap, the natural 6th in Neo
+        // Soul. When the mode is ambiguous or the take modulates we deliberately
+        // fall back to chromatic rather than force a scale the singer isn't in.
+        const bool haveKey = s.keyRoot >= 0 && s.keyConfidence > 0.3f && ! s.keyChromatic;
+
+        if (haveKey && ! s.keyModulates)
         {
-            add (pitchKey,   (float) (s.keyRoot + 1),
-                 juce::String ("Detected key: ") + keyNames[s.keyRoot]
-                 + (s.keyIsMajor ? " major" : " minor")
-                 + " (confidence " + juce::String (s.keyConfidence, 2) + ").");
-            add (pitchScale, s.keyIsMajor ? 2.0f : 3.0f, "");
+            const juce::String label = s.keyName.isNotEmpty()
+                                     ? s.keyName
+                                     : juce::String (keyNames[s.keyRoot])
+                                       + (s.keyIsMajor ? " major" : " minor");
+
+            juce::String why = "Detected key: " + label
+                             + " (confidence " + juce::String (s.keyConfidence, 2) + ").";
+            if (s.keyAmbiguous)
+                why += " The reading is ambiguous, so correction stays gentle.";
+
+            add (pitchKey, (float) (s.keyRoot + 1), why);
+
+            // scaleType 0 means the detector couldn't name a mode → chromatic.
+            // The Scale menu is offset by one (index 0 = Auto).
+            const int st = s.keyScaleType > 0 ? s.keyScaleType : 0;
+            add (pitchScale, (float) (st + 1), "");
+        }
+        else if (s.keyModulates)
+        {
+            add (pitchKey, 0.0f,
+                 "The take changes key" + (s.keyName.isNotEmpty() ? " (" + s.keySummary + ")"
+                                                                  : juce::String())
+                 + " — correcting chromatically so neither section is forced into the other's scale.");
+            add (pitchScale, 1.0f, "");
         }
         else
         {
@@ -489,6 +585,20 @@ juce::String AutoMixBrain::detectedStyle (const AnalysisSnapshot& s)
 }
 
 // ============================================================================
+juce::String AutoMixBrain::detectedGenre (const AnalysisSnapshot& s)
+{
+    if (! s.valid) return {};
+    if (const auto* g = GenreProfiles::byId (genreIdFor (inferStyle (s), s)))
+        return g->name;
+    return styleName (inferStyle (s));
+}
+
+juce::String AutoMixBrain::detectedGenreId (const AnalysisSnapshot& s)
+{
+    return s.valid ? genreIdFor (inferStyle (s), s) : juce::String();
+}
+
+// ============================================================================
 juce::String AutoMixBrain::generatePresetName (const AnalysisSnapshot& s)
 {
     juce::String tone = s.brightness < 0.35f ? "Dark"
@@ -498,7 +608,13 @@ juce::String AutoMixBrain::generatePresetName (const AnalysisSnapshot& s)
     juce::String character = s.crestDb > 20.0f ? "Dynamic"
                            : s.crestDb > 14.0f ? "Expressive" : "Dense";
 
-    return tone + " " + character + " " + styleName (inferStyle (s)) + " Vocal";
+    // Name it after the detected GENRE (e.g. "Dark Dense Drill Vocal") rather
+    // than the broad style, so the preset says what it actually sounds like.
+    juce::String label = styleName (inferStyle (s));
+    if (const auto* g = GenreProfiles::byId (genreIdFor (inferStyle (s), s)))
+        label = g->name;
+
+    return tone + " " + character + " " + label + " Vocal";
 }
 
 // ============================================================================
@@ -507,7 +623,14 @@ juce::String AutoMixBrain::buildSummary (const AnalysisSnapshot& s,
 {
     juce::String out;
     out << "== VoxBrain Analysis ==\n";
-    out << "Detected style: " << styleName (inferStyle (s)) << " — chain tuned to match.\n";
+    {
+        const auto st = inferStyle (s);
+        out << "Detected style: " << styleName (st);
+        if (const auto* g = GenreProfiles::byId (genreIdFor (st, s)))
+            out << " → started from the " << g->name << " (" << g->family
+                << ") template, then refined from your measurements";
+        out << ".\n";
+    }
     out << "Peak " << juce::String (s.peakDb, 1) << " dB | RMS " << juce::String (s.rmsDb, 1)
         << " dB | Crest " << juce::String (s.crestDb, 1) << " dB\n";
     out << "Integrated " << juce::String (s.integratedLufs, 1) << " LUFS | Noise floor "
@@ -516,7 +639,13 @@ juce::String AutoMixBrain::buildSummary (const AnalysisSnapshot& s,
         out << "Median pitch " << juce::String (s.pitchMedianHz, 1) << " Hz | Stability "
             << juce::String (s.pitchStabilityCents, 0) << " cents | Voiced "
             << juce::String (s.voicedRatio * 100.0f, 0) << "%\n";
-    if (s.keyRoot >= 0)
+    // The key line now carries the MODE, any modulation, and an honest note when
+    // the melody alone can't settle the question.
+    if (s.keySummary.isNotEmpty())
+    {
+        out << s.keySummary << "\n";
+    }
+    else if (s.keyRoot >= 0)
     {
         static const char* kn[] = { "C", "C#", "D", "D#", "E", "F",
                                     "F#", "G", "G#", "A", "A#", "B" };

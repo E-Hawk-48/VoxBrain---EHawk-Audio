@@ -1,5 +1,7 @@
 #pragma once
 #include <juce_dsp/juce_dsp.h>
+#include "PitchTracker.h"
+#include "NoteIntelligence.h"
 #include <atomic>
 #include <vector>
 
@@ -41,6 +43,27 @@ struct RetuneParams
     float humanize    = 0.0f;    // 0..1 — preserve natural vibrato/expression
     float formant     = 0.0f;    // semitones, formant shift (0 = natural/preserved)
     int   latencyMode = 2;       // 0=Live, 1=Balanced, 2=Studio (default = original)
+
+    // ---- musical intelligence (see DSP/NoteIntelligence.h) -----------------
+    //  These decide WHAT gets corrected, as opposed to how hard/fast. All four
+    //  at 0 (with speedMs 0) gives the classic fully-hard tuned sound; raising
+    //  them progressively hands expression back to the singer.
+    float flexTune            = 0.35f;  // 0..1 tolerance for natural deviation
+    float vibratoPreservation = 0.75f;  // 0..1 keep vibrato instead of flattening
+    float transitionSmoothing = 0.60f;  // 0..1 let slides/bends breathe
+    float driftCorrection     = 0.50f;  // 0..1 pull long-term drift back to pitch
+
+    float sensitivity   = 0.5f;   // 0..1 tracking sensitivity (voicing bias)
+    /** ONE-KNOB "modern auto-tune": blends every musical allowance toward zero
+        and the glide toward instant. At 1.0 the result is the classic hard-tuned
+        sound regardless of how the expressive controls are set. */
+    float hardTune      = 0.0f;   // 0..1
+    /** Deviations smaller than this are left completely alone — the natural
+        micro-variation that makes a voice sound human. 0 = correct everything. */
+    float snapThreshold = 0.0f;   // cents
+    /** Offline/render mode: spend more analysis hindsight for the steadiest
+        possible tracking (latency is irrelevant when not monitoring). */
+    bool  hqRender      = false;
 };
 
 class RetuneEngine
@@ -74,8 +97,23 @@ private:
     void applyLatencyMode (int mode);   // recompute active delay/floor; re-seat OLA
 
     // ---- pitch tracking -----------------------------------------------------
+    //  F0 now comes from the redesigned PitchTracker (multi-candidate + Viterbi;
+    //  see PitchTracker.h). Its decode lag is chosen per latency mode to stay
+    //  INSIDE the lookback delay this engine already imposes, so the extra
+    //  stability is free — the audio being resynthesised is already that old.
     void  pushAnalysis (float sample);
-    float runYin();
+    void  configureTracker();          // allocates (prepare only)
+    void  applyTrackerMode() noexcept; // RT-safe narrowing per latency mode
+    PitchTracker tracker;
+    std::vector<float> trackerFeed;     // preallocated hop buffer (RT-safe)
+    int   trackerFeedFill = 0;
+
+    // Musical layer: decides how much of the configured correction is actually
+    // appropriate right now (vibrato/slide preserved, off-pitch corrected).
+    NoteIntelligence notes;
+    float noteCorrectionScale = 1.0f;   // updated per analysis hop
+    float noteGlideScale      = 1.0f;
+    bool  hqMode = false;               // HQ render: maximum tracking hindsight
 
     // ---- retune logic -------------------------------------------------------
     float quantizeTargetHz (float inputHz, const RetuneParams& p) const;
@@ -105,20 +143,14 @@ private:
     float activeMinHz       = 65.0f;               // lowest pitch YIN will chase
     int   activeGrainMargin = 192;                 // scheduling slack in the delay
 
-    // Analysis (incremental YIN)
-    int  anaWindow = 1536, anaHop = 384;
-    std::vector<float> anaBuf;
-    std::vector<float> anaFrame, yinDiff;
-    int  anaFill = 0, anaWritePos = 0;
+    // Analysis (F0 comes from `tracker`; see PitchTracker.h)
     float currentF0 = 0.0f, f0Confidence = 0.0f;
     float smoothedPeriod = 0.0f;                   // samples
     int   octaveJumpCount = 0;
 
-    // F0 median smoothing (outlier rejection) + slow centre for humanize
-    float f0Hist[3] { 0, 0, 0 };
-    int   f0HistPos = 0;
-    bool  histPrimed = false;                      // seed median on note onset
-    float f0Center = 0.0f;                         // slow-moving pitch centre
+    // Slow pitch centre for humanize (the old median-of-3 outlier rejection is
+    // gone — the tracker now resolves outliers with full temporal context).
+    float f0Center = 0.0f;
 
     // Voicing decision with hysteresis (updated per hop)
     bool voicedState = false;
@@ -132,7 +164,7 @@ private:
 
     std::atomic<float> uiInHz { 0.0f }, uiTargetHz { 0.0f };
 
-    static constexpr float maxHz = 900.0f;
-    static constexpr float yinThreshold = 0.18f;
+    // Falsetto/soprano headroom (the old engine stopped at 900 Hz).
+    static constexpr float maxHz = 1200.0f;
 };
 } // namespace vf

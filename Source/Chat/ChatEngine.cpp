@@ -1,5 +1,8 @@
 #include "ChatEngine.h"
 #include "../Parameters.h"
+#include "../Brain/GenreProfiles.h"
+#include "../Brain/ModuleIntelligence.h"
+#include "ModuleCommands.h"
 #include <vector>
 
 namespace vf
@@ -289,51 +292,9 @@ const std::vector<Rule>& rules()
             { delayMix, 4.0f, false } },
           true, "Faux-doubled for width and thickness", "Un-doubled" },
 
-        // ---- Genre one-shots (absolute presets) --------------------------
-        { { "rap", "trap", "hip hop", "hiphop" },
-          { { eqOn, 1.0f, true }, { eqHpfFreq, 90.0f, true }, { eqPresenceGain, 3.5f, true },
-            { compOn, 1.0f, true }, { compThreshold, -20.0f, true }, { compRatio, 4.0f, true },
-            { deessOn, 1.0f, true }, { satOn, 1.0f, true }, { satType, 0.0f, true }, { satMix, 25.0f, true },
-            { pitchOn, 1.0f, true }, { pitchScale, 3.0f, true }, { pitchSpeed, 20.0f, true }, { pitchAmount, 90.0f, true },
-            { delayOn, 1.0f, true }, { delayMix, 10.0f, true }, { verbMix, 8.0f, true } },
-          false, "Modern rap vocal: tight, present, up-front with a slap throw", "" },
-
-        { { "drill" },
-          { { eqOn, 1.0f, true }, { eqAirGain, -2.0f, true }, { compOn, 1.0f, true }, { compThreshold, -22.0f, true },
-            { pitchOn, 1.0f, true }, { pitchScale, 3.0f, true }, { pitchSpeed, 0.0f, true }, { pitchAmount, 100.0f, true },
-            { verbType, 0.0f, true }, { verbMix, 6.0f, true } },
-          false, "Drill vocal: dark, tight, hard-tuned", "" },
-
-        { { "pop vocal", "pop music", "radio pop", "mainstream pop" },
-          { { eqOn, 1.0f, true }, { eqAirGain, 3.0f, true }, { eqPresenceGain, 2.0f, true },
-            { deessOn, 1.0f, true }, { compOn, 1.0f, true }, { compThreshold, -18.0f, true }, { compRatio, 3.0f, true },
-            { pitchOn, 1.0f, true }, { pitchSpeed, 30.0f, true }, { pitchAmount, 90.0f, true },
-            { verbType, 2.0f, true }, { verbMix, 14.0f, true }, { verbWidth, 100.0f, true } },
-          false, "Polished pop vocal: bright, airy, wide, radio-ready", "" },
-
-        { { "rnb", "r and b", "r n b", "rhythm and blues", "neo soul" },
-          { { eqOn, 1.0f, true }, { eqLowShelfGain, 2.0f, true }, { eqAirGain, 2.0f, true },
-            { satOn, 1.0f, true }, { satType, 1.0f, true }, { satMix, 20.0f, true },
-            { pitchOn, 1.0f, true }, { pitchSpeed, 45.0f, true }, { pitchAmount, 70.0f, true }, { pitchHumanize, 40.0f, true },
-            { verbType, 1.0f, true }, { verbMix, 16.0f, true }, { verbWidth, 100.0f, true } },
-          false, "Smooth R&B vocal: warm, lush, wide with natural vibrato", "" },
-
-        { { "rock vocal", "rock", "grunge", "punk vocal" },
-          { { eqOn, 1.0f, true }, { eqPresenceGain, 3.0f, true }, { compOn, 1.0f, true }, { compThreshold, -20.0f, true },
-            { satOn, 1.0f, true }, { satType, 2.0f, true }, { satDrive, 40.0f, true }, { satMix, 35.0f, true },
-            { pitchOn, 0.0f, true }, { verbType, 0.0f, true }, { verbMix, 8.0f, true } },
-          false, "Rock vocal: driven, aggressive, raw", "" },
-
-        { { "country vocal", "country", "folk", "americana" },
-          { { eqOn, 1.0f, true }, { eqLowShelfGain, 1.0f, true }, { eqPresenceGain, 2.0f, true },
-            { deessOn, 1.0f, true }, { pitchOn, 1.0f, true }, { pitchSpeed, 80.0f, true }, { pitchAmount, 60.0f, true },
-            { pitchHumanize, 60.0f, true }, { verbType, 2.0f, true }, { verbMix, 12.0f, true } },
-          false, "Country/folk vocal: natural, warm and honest", "" },
-
-        { { "gospel", "choir vocal", "worship vocal" },
-          { { eqOn, 1.0f, true }, { eqAirGain, 2.5f, true }, { compOn, 1.0f, true }, { compThreshold, -18.0f, true },
-            { verbType, 1.0f, true }, { verbSize, 70.0f, true }, { verbMix, 22.0f, true }, { verbWidth, 100.0f, true } },
-          false, "Gospel vocal: big, lush, wide and uplifting", "" },
+        // NOTE: genre one-shots used to live here. They now come from
+        // Brain/GenreProfiles (data-driven, with sub-genres + aliases), matched
+        // separately in handleMessage so "emo trap" beats "trap".
     };
     return r;
 }
@@ -408,6 +369,13 @@ void applyMove (juce::AudioProcessorValueTreeState& apvts, const Move& mv,
 juce::String ChatEngine::handleMessage (const juce::String& message,
                                         juce::AudioProcessorValueTreeState& apvts)
 {
+    return handleMessage (message, apvts, Context{});
+}
+
+juce::String ChatEngine::handleMessage (const juce::String& message,
+                                        juce::AudioProcessorValueTreeState& apvts,
+                                        Context ctx)
+{
     const juce::String lower = message.toLowerCase();
 
     // "reset" shortcut
@@ -447,6 +415,137 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
     struct Match { const Rule* rule; Modifiers mods; };
     std::vector<Match> matches;
 
+    // ---- Module rack commands --------------------------------------------
+    //  "add a de-esser", "remove the chorus", "set up the compressor for my
+    //  voice". Insert/dial use the SAME knowledge base LEARN uses, so a module
+    //  added by request arrives already tuned to the analysed vocal rather than
+    //  at factory defaults. Parsing lives in ModuleCommands (pure + tested).
+    juce::StringArray moduleReplies;
+    bool rackChanged = false;
+    if (ctx.rack != nullptr)
+    {
+        for (const auto& clauseRaw : clauses)
+        {
+            const auto cmd = ModuleCommands::parse (clauseRaw.toLowerCase());
+            if (! cmd.isValid()) continue;
+
+            const bool haveAnalysis = ctx.snapshot != nullptr && ctx.snapshot->valid;
+
+            // Is it already in the rack?
+            juce::String existingId;
+            for (const auto& n : ctx.rack->snapshot())
+                if (n.typeId == cmd.moduleId) { existingId = n.instanceId; break; }
+
+            auto dialInto = [&] (const juce::String& instanceId) -> juce::String
+            {
+                if (! haveAnalysis)
+                    return " (run LEARN and I can tune it to your voice)";
+                const auto rec = ModuleIntelligence::dialFor (cmd.moduleId, *ctx.snapshot);
+                if (rec.settings.empty()) return {};
+                if (auto* m = ctx.rack->find (instanceId))
+                    for (const auto& st : rec.settings)
+                        m->setValue (st.paramId, st.value);
+                return rec.settingsSummary.isNotEmpty() ? " — set to " + rec.settingsSummary
+                                                        : juce::String();
+            };
+
+            switch (cmd.verb)
+            {
+                case ModuleCommand::Verb::Add:
+                {
+                    if (existingId.isNotEmpty())
+                    {
+                        moduleReplies.add (cmd.moduleName + " is already in the chain"
+                                           + dialInto (existingId));
+                        rackChanged = true;
+                        break;
+                    }
+                    const auto iid = ctx.rack->addModule (cmd.moduleId);
+                    if (iid.isEmpty()) { moduleReplies.add ("I couldn't add " + cmd.moduleName); break; }
+                    moduleReplies.add ("Added " + cmd.moduleName + dialInto (iid));
+                    rackChanged = true;
+                    break;
+                }
+                case ModuleCommand::Verb::Remove:
+                {
+                    if (existingId.isEmpty())
+                        moduleReplies.add (cmd.moduleName + " isn't in the chain");
+                    else
+                    {
+                        // Respect the lock the same way every other AI move does.
+                        bool locked = false;
+                        for (const auto& n : ctx.rack->snapshot())
+                            if (n.instanceId == existingId) locked = n.lock;
+                        if (locked)
+                            moduleReplies.add (cmd.moduleName + " is locked — unlock it first");
+                        else
+                        {
+                            ctx.rack->removeModule (existingId);
+                            moduleReplies.add ("Removed " + cmd.moduleName);
+                            rackChanged = true;
+                        }
+                    }
+                    break;
+                }
+                case ModuleCommand::Verb::Dial:
+                {
+                    if (existingId.isEmpty())
+                    {
+                        const auto iid = ctx.rack->addModule (cmd.moduleId);
+                        if (iid.isEmpty()) { moduleReplies.add ("I couldn't add " + cmd.moduleName); break; }
+                        moduleReplies.add ("Added " + cmd.moduleName + dialInto (iid));
+                    }
+                    else
+                    {
+                        moduleReplies.add ("Dialled " + cmd.moduleName + " in for your voice"
+                                           + dialInto (existingId));
+                    }
+                    rackChanged = true;
+                    break;
+                }
+                default: break;
+            }
+        }
+
+        if (rackChanged && ctx.onRackChanged)
+            ctx.onRackChanged();
+    }
+
+    // ---- Genre / sub-genre one-shots -------------------------------------
+    //  Checked FIRST and per clause, using longest-alias matching, so "emo trap"
+    //  resolves to Emo Trap rather than Trap, and a compound request like
+    //  "make it emo trap but less reverb" applies the genre and THEN lets the
+    //  vocabulary rules adjust it. Genre targets are absolute, so applying them
+    //  before the adjustments is what makes that ordering work.
+    juce::StringArray genreReplies;
+    const GenreProfile* appliedGenre = nullptr;
+    for (const auto& clauseRaw : clauses)
+    {
+        const auto* g = GenreProfiles::match (clauseRaw.toLowerCase());
+        if (g == nullptr || g == appliedGenre) continue;
+        appliedGenre = g;
+
+        int applied = 0, lockedHits = 0;
+        for (const auto& t : g->targets)
+        {
+            if (moduleLocked (apvts, t.paramId)) { ++lockedHits; continue; }
+            applyMove (apvts, { t.paramId, t.value, true }, 1.0f, false);
+            ++applied;
+        }
+
+        if (applied > 0)
+        {
+            juce::String line = g->name + " (" + g->family + "): " + g->sound;
+            if (lockedHits > 0)
+                line += " (left your locked modules alone)";
+            genreReplies.add (line);
+        }
+        else if (lockedHits > 0)
+        {
+            genreReplies.add ("Everything " + g->name + " would touch is locked — unlock a module first");
+        }
+    }
+
     for (const auto& clauseRaw : clauses)
     {
         juce::String cl;                          // normalise this clause
@@ -476,13 +575,16 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
         }
     }
 
-    if (matches.empty())
+    if (matches.empty() && genreReplies.isEmpty() && moduleReplies.isEmpty())
         return "I didn't catch a mixing move in that. Try things like: \"darker\", "
                "\"more air\", \"punchier\", \"warmer\", \"make it pop\", \"tuck it back\", "
                "\"more human\", \"deeper voice\", \"minor key\", \"hard tune\", "
                "\"more reverb\", \"glue\", \"tame the resonance\", \"double it\", "
-               "\"vintage\", \"radio ready\", or a genre like \"rap\", \"pop vocal\", "
-               "\"rnb\", \"rock\", \"drill\", \"gospel\" — or \"reset\".";
+               "\"vintage\", \"radio ready\" — or name a genre or sub-genre such as "
+             + GenreProfiles::examplesForHelp (8)
+             + " (I know " + juce::String ((int) GenreProfiles::all().size())
+             + " across " + juce::String (GenreProfiles::families().size())
+             + " families) — or say \"reset\".";
 
     // Apply and build the reply
     juce::StringArray replies;
@@ -505,7 +607,14 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
             replies.add ("that module's locked — unlock it first");
     }
 
-    juce::String reply = replies.joinIntoString (". ");
+    // Genre first (it sets the foundation), then module changes, then the
+    // parameter adjustments made on top.
+    juce::StringArray all;
+    all.addArray (genreReplies);
+    all.addArray (moduleReplies);
+    all.addArray (replies);
+
+    juce::String reply = all.joinIntoString (". ");
     if (reply.isEmpty())
         reply = "Nothing to change there.";
     return reply + ".";

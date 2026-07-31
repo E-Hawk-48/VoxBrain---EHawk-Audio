@@ -13,10 +13,6 @@ namespace
     constexpr int majorMask = 0b101010110101;   // 0 2 4 5 7 9 11
     constexpr int minorMask = 0b010110101101;   // 0 2 3 5 7 8 10
 
-    // Weak-voicing fallback: accept the global CMND minimum (when no bin crossed
-    // the absolute threshold) only if it is still this periodic. Just past the
-    // 0.18 hard threshold — recovers soft/edge frames without chasing noise.
-    constexpr float kFallbackThresh = 0.25f;
 }
 
 // ============================================================================
@@ -26,9 +22,6 @@ void RetuneEngine::prepare (double sampleRate, int maxBlockSize, int numChannels
 {
     fs = sampleRate;
     channels = std::max (1, numChannels);
-
-    anaWindow = std::max (512, (int) std::round (fs * 0.030));
-    anaHop    = anaWindow / 4;
 
     // Buffers are always sized for the LARGEST configuration (Studio) so a
     // runtime latency-mode switch needs no reallocation — it just uses a shorter
@@ -46,11 +39,60 @@ void RetuneEngine::prepare (double sampleRate, int maxBlockSize, int numChannels
     olaBuf.assign ((size_t) channels, std::vector<float> ((size_t) ringSize, 0.0f));
     winSum.assign ((size_t) ringSize, 0.0f);
 
-    anaBuf.assign   ((size_t) anaWindow, 0.0f);
-    anaFrame.assign ((size_t) anaWindow, 0.0f);
-    yinDiff.assign  ((size_t) anaWindow / 2 + 1, 0.0f);
+    configureTracker();
 
     reset();
+}
+
+// ---------------------------------------------------------------------------
+//  Tracker configuration.
+//  The decode lag buys stability (octave/flip resolution) at the cost of group
+//  delay — but this engine ALREADY delays the audio it resynthesises by
+//  `delaySamples`, and the tracker analyses input as it arrives. So as long as
+//  the tracker's total group delay stays within that existing lookback, the
+//  stability is genuinely free. Studio has the most room; Live has the least,
+//  so it trades a little hindsight for its lower latency.
+// ---------------------------------------------------------------------------
+void RetuneEngine::configureTracker()
+{
+    // ALLOCATE ONCE for the widest configuration — the Studio pitch floor and the
+    // longest decode window. A latency-mode change then only narrows what is
+    // used (PitchTracker::setRuntimeMode), which is allocation-free. This mirrors
+    // how this engine already sizes its own ring/OLA buffers for the maximum
+    // delay, and it is what keeps a runtime mode switch off the allocator on the
+    // audio thread.
+    const auto widest = configForMode (2, fs);          // Studio = lowest floor
+
+    PitchTracker::Config tc;
+    tc.sampleRate  = fs;
+    tc.minHz       = widest.minHz;
+    tc.maxHz       = maxHz;
+    tc.hopSize     = std::max (64, (int) std::round (fs * 0.0058));   // ~5.8 ms
+    tc.windowSize  = (int) std::round (fs * 0.023);                   // ~23 ms
+    tc.decodeLag   = 4;                                               // max hindsight
+    tc.sensitivity = 0.5f;
+    tracker.prepare (tc);
+
+    trackerFeed.assign ((size_t) tracker.getConfig().hopSize, 0.0f);
+    trackerFeedFill = 0;
+
+    // The musical layer runs once per tracker frame, so its notion of time is
+    // the analysis frame rate.
+    notes.prepare (fs / (double) juce::jmax (1, tracker.getConfig().hopSize));
+
+    applyTrackerMode();
+}
+
+void RetuneEngine::applyTrackerMode() noexcept
+{
+    // Real-time safe: narrows the pitch floor + decode lag to the active mode.
+    // Lower-latency modes take less hindsight so the tracker's group delay keeps
+    // fitting inside this engine's (shorter) lookback. HQ render mode is for
+    // bouncing, where nothing is being monitored, so it takes the maximum
+    // hindsight the tracker was allocated for — the steadiest possible decode.
+    const int lag = hqMode ? 4
+                           : (activeMode == 0 ? 2 : (activeMode == 1 ? 3 : 4));
+    tracker.setRuntimeMode (activeMinHz, lag);
 }
 
 void RetuneEngine::reset()
@@ -58,15 +100,18 @@ void RetuneEngine::reset()
     for (auto& r : ring)   std::fill (r.begin(), r.end(), 0.0f);
     for (auto& o : olaBuf) std::fill (o.begin(), o.end(), 0.0f);
     std::fill (winSum.begin(), winSum.end(), 0.0f);
-    std::fill (anaBuf.begin(), anaBuf.end(), 0.0f);
+
+    tracker.reset();
+    trackerFeedFill = 0;
+    notes.reset();
+    noteCorrectionScale = 1.0f;
+    noteGlideScale = 1.0f;
 
     writeAbs = 0;
-    anaFill = 0;  anaWritePos = 0;
     currentF0 = 0.0f;  f0Confidence = 0.0f;
     smoothedPeriod = (float) fs / 200.0f;
     octaveJumpCount = 0;
-    f0Hist[0] = f0Hist[1] = f0Hist[2] = 0.0f;
-    f0HistPos = 0;  histPrimed = false;  f0Center = 0.0f;
+    f0Center = 0.0f;
     voicedState = false;
     unvoicedHops = 0;
     nextGrainOut = 1.0;
@@ -110,6 +155,11 @@ void RetuneEngine::applyLatencyMode (int mode)
     // Never exceed the allocated buffers (Studio is the max, but clamp anyway).
     delaySamples      = std::min (cfg.delaySamples, std::max (1, maxDelaySamples));
 
+    // Narrow the tracker to the new mode. ALLOCATION-FREE (prepare() already
+    // sized it for the widest config), so this is safe even though process()
+    // applies a mode change on the audio thread.
+    applyTrackerMode();
+
     // Re-seat only the OLA/scheduler so grains scheduled under the OLD delay do
     // not linger. The input ring is left intact — the delayed read is valid at
     // every supported delay, so audio keeps flowing (no dropout on the switch).
@@ -121,45 +171,33 @@ void RetuneEngine::applyLatencyMode (int mode)
 }
 
 // ============================================================================
-//  Pitch tracking (incremental YIN, runs every anaHop samples)
+//  Pitch tracking — delegated to the redesigned PitchTracker
 // ============================================================================
 void RetuneEngine::pushAnalysis (float sample)
 {
-    anaBuf[(size_t) anaWritePos] = sample;
-    anaWritePos = (anaWritePos + 1) % anaWindow;
-
-    if (++anaFill < anaHop)
+    // Feed the tracker in hop-sized chunks (it does its own windowing/ringing).
+    trackerFeed[(size_t) trackerFeedFill++] = sample;
+    if (trackerFeedFill < (int) trackerFeed.size())
         return;
 
-    anaFill = 0;
-    const float f0raw = runYin();
+    tracker.process (trackerFeed.data(), trackerFeedFill);
+    trackerFeedFill = 0;
 
-    // Median-of-3 outlier rejection over VOICED estimates only. Unvoiced frames
-    // (f0raw == 0) must NOT enter the history — otherwise a single consonant/
-    // breath zero pollutes the next two medians and yanks the corrected pitch,
-    // which is heard as choppiness/glitches on transitions. On a fresh note
-    // onset we prime all three slots so the very first voiced frame is stable.
-    float f0;
-    if (f0raw > 0.0f)
-    {
-        if (! histPrimed)
-        {
-            f0Hist[0] = f0Hist[1] = f0Hist[2] = f0raw;
-            histPrimed = true;
-        }
-        else
-        {
-            f0Hist[f0HistPos] = f0raw;
-            f0HistPos = (f0HistPos + 1) % 3;
-        }
-        const float a = f0Hist[0], b = f0Hist[1], c = f0Hist[2];
-        f0 = std::max (std::min (a, b), std::min (std::max (a, b), c));
-    }
-    else
-    {
-        f0 = 0.0f;             // unvoiced this frame — leave the history untouched
-        histPrimed = false;    // re-prime cleanly when the next note starts
-    }
+    // The tracker already resolves octave errors, note-flips and voicing with
+    // full temporal context (Viterbi over its decode window), so the old
+    // median-of-3 + threshold heuristics that used to live here are gone —
+    // they can only blur a decision that has now been made properly.
+    const float f0 = tracker.isVoiced() ? tracker.latestHz() : 0.0f;
+    f0Confidence = tracker.latestConfidence();
+
+    // Musical judgement on this frame: is the deviation expression (vibrato, a
+    // slide, a scoop) or is it simply off-pitch? The result scales how much of
+    // the user's correction actually gets applied, which is what lets the engine
+    // be transparent on an expressive take and still ruthless when asked.
+    const auto nd = notes.process (f0, tracker.isVoiced());
+    noteCorrectionScale = nd.correctionScale;
+    noteGlideScale      = nd.glideScale;
+
     currentF0 = f0;
     uiInHz.store (f0);
 
@@ -169,133 +207,28 @@ void RetuneEngine::pushAnalysis (float sample)
 
     if (f0 > 0.0f)
     {
+        // The grain scheduler needs a period; the tracker's estimate is already
+        // temporally coherent, so this only has to follow it (a light smoother
+        // keeps grain spacing from stepping on a fractional-Hz change).
         const float period = (float) fs / f0;
-        const bool implausible = smoothedPeriod > 0.0f
-                              && (period > smoothedPeriod * 1.6f
-                               || period < smoothedPeriod * 0.6f);
-        if (implausible)
-        {
-            if (++octaveJumpCount >= 3)   // accept only persistent changes
-            {
-                smoothedPeriod = period;
-                octaveJumpCount = 0;
-            }
-        }
-        else
-        {
-            smoothedPeriod = 0.5f * smoothedPeriod + 0.5f * period;
-            octaveJumpCount = 0;
-        }
+        smoothedPeriod = smoothedPeriod > 0.0f ? 0.6f * smoothedPeriod + 0.4f * period
+                                               : period;
+        octaveJumpCount = 0;
     }
 
-    // Voicing hysteresis: enter quickly, leave only after 3 quiet hops.
-    if (f0 > 0.0f && f0Confidence > 0.55f)
+    // Voicing comes from the tracker, which decides it with temporal context
+    // (an explicit unvoiced state inside the Viterbi decode) rather than a bare
+    // per-frame threshold. A short leave-hysteresis is still useful so a single
+    // consonant inside a held word doesn't unlock the note.
+    if (tracker.isVoiced())
     {
         voicedState = true;
         unvoicedHops = 0;
     }
-    else if (f0 <= 0.0f || f0Confidence < 0.35f)
+    else if (++unvoicedHops >= 2)
     {
-        if (++unvoicedHops >= 3)
-            voicedState = false;
+        voicedState = false;
     }
-    // between 0.35 and 0.55: keep previous state (no flapping)
-}
-
-float RetuneEngine::runYin()
-{
-    const int n = anaWindow;
-    for (int i = 0; i < n; ++i)
-        anaFrame[(size_t) i] = anaBuf[(size_t) ((anaWritePos + i) % n)];
-
-    float energy = 0.0f;
-    for (int i = 0; i < n; ++i) energy += anaFrame[(size_t) i] * anaFrame[(size_t) i];
-    if (energy / (float) n < 1.0e-7f) { f0Confidence = 0.0f; return 0.0f; }
-
-    const int maxTau = std::min (n / 2 - 1, (int) (fs / activeMinHz));
-    const int minTau = std::max (2,         (int) (fs / maxHz));
-
-    for (int tau = 0; tau <= maxTau; ++tau)
-    {
-        float sum = 0.0f;
-        const int limit = n - maxTau;
-        for (int i = 0; i < limit; ++i)
-        {
-            const float d = anaFrame[(size_t) i] - anaFrame[(size_t) (i + tau)];
-            sum += d * d;
-        }
-        yinDiff[(size_t) tau] = sum;
-    }
-
-    yinDiff[0] = 1.0f;
-    float runningSum = 0.0f;
-    for (int tau = 1; tau <= maxTau; ++tau)
-    {
-        runningSum += yinDiff[(size_t) tau];
-        yinDiff[(size_t) tau] = runningSum > 0.0f
-                              ? yinDiff[(size_t) tau] * (float) tau / runningSum
-                              : 1.0f;
-    }
-
-    int   tauEstimate = -1;
-    bool  fallback    = false;
-    for (int tau = minTau; tau <= maxTau; ++tau)
-    {
-        if (yinDiff[(size_t) tau] < yinThreshold)
-        {
-            while (tau + 1 <= maxTau && yinDiff[(size_t) (tau + 1)] < yinDiff[(size_t) tau])
-                ++tau;
-            tauEstimate = tau;
-            break;
-        }
-    }
-
-    // Weak-voicing fallback: nothing crossed the absolute threshold, but the
-    // frame may still be a soft / breathy-but-pitched note (or a note on/off
-    // edge) that the hard threshold drops — heard as clipped syllables. If the
-    // GLOBAL minimum of the normalised difference is still fairly periodic, take
-    // it, but scale its confidence DOWN so it can carry a pitch value without
-    // ever forcing the voicing gate to flip on from silence/noise.
-    if (tauEstimate < 0)
-    {
-        int   bestTau = -1;
-        float bestVal = 1.0e9f;
-        for (int tau = minTau; tau <= maxTau; ++tau)
-            if (yinDiff[(size_t) tau] < bestVal) { bestVal = yinDiff[(size_t) tau]; bestTau = tau; }
-
-        const bool isLocalMin = bestTau > minTau && bestTau < maxTau
-                             && yinDiff[(size_t) (bestTau - 1)] >= bestVal
-                             && yinDiff[(size_t) (bestTau + 1)] >= bestVal;
-        if (bestTau > 0 && bestVal < kFallbackThresh && isLocalMin)
-        {
-            tauEstimate = bestTau;
-            fallback = true;
-        }
-    }
-    if (tauEstimate < 0) { f0Confidence = 0.0f; return 0.0f; }
-
-    const float periodicity = 1.0f - yinDiff[(size_t) tauEstimate];
-    f0Confidence = fallback ? periodicity * 0.7f : periodicity;
-
-    float betterTau = (float) tauEstimate;
-    if (tauEstimate > 0 && tauEstimate < maxTau)
-    {
-        const float s0 = yinDiff[(size_t) (tauEstimate - 1)];
-        const float s1 = yinDiff[(size_t) tauEstimate];
-        const float s2 = yinDiff[(size_t) (tauEstimate + 1)];
-        const float denom = 2.0f * s1 - s2 - s0;
-        if (std::abs (denom) > 1.0e-12f)
-        {
-            // Clamp the sub-sample offset to the neighbouring bins. A near-flat
-            // parabola (tiny denom) can otherwise throw the vertex far outside
-            // [-1,1], producing an occasional wild F0 spike that reads as a pitch
-            // glitch. A true minimum's vertex always lies within one bin.
-            const float off = 0.5f * (s2 - s0) / denom;
-            if (std::abs (off) < 1.0f)
-                betterTau += off;
-        }
-    }
-    return betterTau > 0.0f ? (float) fs / betterTau : 0.0f;
 }
 
 // ============================================================================
@@ -424,9 +357,45 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
     if (p.latencyMode != activeMode)
         applyLatencyMode (p.latencyMode);
 
-    const float glide = p.speedMs <= 0.5f
+    if (p.hqRender != hqMode)
+    {
+        hqMode = p.hqRender;      // allocation-free (setRuntimeMode only narrows)
+        applyTrackerMode();
+    }
+
+    // HARD TUNE is a one-knob macro: it pulls every musical allowance toward
+    // zero and the glide toward instant, so a single control takes the engine
+    // from "transparent and natural" to the modern hard-tuned sound without the
+    // user having to understand five interacting parameters.
+    const float ht = juce::jlimit (0.0f, 1.0f, p.hardTune);
+    const float blend = 1.0f - ht;
+
+    // Push the musical-intelligence settings down (cheap, no allocation).
+    {
+        NoteIntelligence::Params np;
+        np.flexTune            = juce::jlimit (0.0f, 1.0f, p.flexTune)            * blend;
+        np.vibratoPreservation = juce::jlimit (0.0f, 1.0f, p.vibratoPreservation) * blend;
+        np.transitionSmoothing = juce::jlimit (0.0f, 1.0f, p.transitionSmoothing) * blend;
+        // Drift correction goes the OTHER way: hard tuning wants maximum pull.
+        np.driftCorrection     = juce::jlimit (0.0f, 1.0f,
+                                     juce::jlimit (0.0f, 1.0f, p.driftCorrection) * blend + ht);
+        notes.setParams (np);
+    }
+
+    tracker.setSensitivity (juce::jlimit (0.0f, 1.0f, p.sensitivity));
+
+    // Fully hard: the musical layer is bypassed entirely, so the classic instant
+    // snap is exactly as immediate as it ever was.
+    const float effSpeedMs = p.speedMs * blend;
+    const bool hardTune = effSpeedMs <= 0.5f
+                       && p.flexTune * blend <= 0.001f
+                       && p.vibratoPreservation * blend <= 0.001f
+                       && p.transitionSmoothing * blend <= 0.001f;
+
+    const float effGlideMs = hardTune ? 0.0f : effSpeedMs * noteGlideScale;
+    const float glide = effGlideMs <= 0.5f
                       ? 0.0f
-                      : std::exp (-1.0f / ((float) fs * p.speedMs * 0.001f));
+                      : std::exp (-1.0f / ((float) fs * effGlideMs * 0.001f));
 
     const float  humanize     = juce::jlimit (0.0f, 1.0f, p.humanize);
     const float  formantSemis = juce::jlimit (-5.0f, 5.0f, p.formant);
@@ -478,8 +447,28 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                 {
                     const float vibRatio = currentF0 / juce::jmax (1.0f, centreHz);
                     const float desiredHz = snapHz * std::pow (vibRatio, humanize);
+                    // The musical layer's verdict scales the depth of correction:
+                    // full on genuine off-pitch, eased through vibrato and slides.
+                    const float musicalAmount = hardTune ? p.amount
+                                                         : p.amount * noteCorrectionScale;
+                    const float rawCents = 1200.0f * std::log2 (desiredHz / currentF0);
+
+                    // SNAP THRESHOLD: leave micro-deviation completely untouched.
+                    // Correcting the last few cents is what makes a voice sound
+                    // synthetic even when nothing is obviously "tuned"; above the
+                    // threshold the correction fades in rather than stepping, so
+                    // the boundary itself is inaudible.
+                    const float snapCents = juce::jlimit (0.0f, 100.0f, p.snapThreshold) * blend;
+                    float gate = 1.0f;
+                    if (snapCents > 0.0f)
+                    {
+                        const float a = std::abs (rawCents);
+                        gate = a <= snapCents ? 0.0f
+                             : juce::jlimit (0.0f, 1.0f, (a - snapCents) / juce::jmax (2.0f, snapCents));
+                    }
+
                     targetCents = juce::jlimit (-700.0f, 700.0f,
-                                    1200.0f * std::log2 (desiredHz / currentF0) * p.amount);
+                                                rawCents * musicalAmount * gate);
                 }
             }
             else

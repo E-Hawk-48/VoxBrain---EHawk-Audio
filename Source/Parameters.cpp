@@ -54,7 +54,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                 // original engine (unchanged). Live roughly halves the delay.
                 std::make_unique<juce::AudioParameterChoice> (
                     juce::ParameterID { pitchLatency, 1 }, "Retune Latency",
-                    juce::StringArray { "Live", "Balanced", "Studio" }, 2));
+                    juce::StringArray { "Live", "Balanced", "Studio" }, 2),
+                // ---- Pro controls -------------------------------------------
+                //  Defaults deliberately match the behaviour that shipped before
+                //  these existed, so loading an old session sounds identical.
+                pct (pitchFlex,        "Flex Tune",           35.0f),
+                pct (pitchVibrato,     "Vibrato Preserve",    75.0f),
+                pct (pitchTransition,  "Note Transition",     60.0f),
+                pct (pitchDrift,       "Drift Correction",    50.0f),
+                pct (pitchSensitivity, "Tracking Sensitivity",50.0f),
+                pct (pitchHardTune,    "Hard Tune",            0.0f),
+                std::make_unique<APF> (juce::ParameterID { pitchSnap, 1 }, "Snap Threshold",
+                                       Range { 0.0f, 100.0f, 1.0f }, 0.0f),
+                // A CHOICE rather than a bool so it drives the card's combo UI
+                // (the combo binding populates its items from a choice list).
+                std::make_unique<juce::AudioParameterChoice> (
+                    juce::ParameterID { pitchHQ, 1 }, "HQ Render",
+                    juce::StringArray { "Off", "On" }, 0));
 
     // Gate
     layout.add (onOff (gateOn, "Gate", true),

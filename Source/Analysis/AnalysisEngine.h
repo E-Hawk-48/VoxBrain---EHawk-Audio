@@ -4,6 +4,7 @@
 #include <array>
 #include "PitchDetector.h"
 #include "LoudnessMeter.h"
+#include "KeyDetector.h"
 
 namespace vf
 {
@@ -74,10 +75,21 @@ struct AnalysisSnapshot
     float pitchStabilityCents = 0.0f;  // median abs deviation between frames
     float voicedRatio       = 0.0f;    // fraction of frames with confident pitch
 
-    // Key detection (Krumhansl-Schmuckler on the pitch-class histogram)
+    // Key detection (see Analysis/KeyDetector — modal + modulation aware)
     int   keyRoot       = -1;          // 0=C … 11=B, -1 = undetected
-    bool  keyIsMajor    = true;
+    bool  keyIsMajor    = true;        // kept for backward compatibility
     float keyConfidence = 0.0f;        // 0..1 correlation margin
+
+    // Extended key information. `keyScaleType` maps DIRECTLY onto the retune
+    // engine's scaleType (1=Major, 2=NatMinor, 3=HarmMinor, 4=Dorian,
+    // 5=Mixolydian, 6=Phrygian; 0 = chromatic/undetermined), so a detected mode
+    // can drive the corrector without a second lookup table.
+    int   keyScaleType   = 0;
+    bool  keyAmbiguous   = false;      // relative major/minor, or mode unproven
+    bool  keyModulates   = false;      // more than one sustained key region
+    bool  keyChromatic   = false;      // nothing fits — chromatic/atonal
+    juce::String keyName;              // "F# Dorian"
+    juce::String keySummary;           // plain-language explanation for the report
 
     bool  valid = false;
 };

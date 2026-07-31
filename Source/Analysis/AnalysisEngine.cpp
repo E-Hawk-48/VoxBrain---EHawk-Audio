@@ -276,50 +276,33 @@ AnalysisSnapshot AnalysisEngine::finalizeLearning()
     if (totalPitchFrames > 0)
         s.voicedRatio = (float) pitchFrames.size() / (float) totalPitchFrames;
 
-    // ---- Key detection: pitch-class histogram vs Krumhansl-Kessler profiles
-    if (pitchFrames.size() > 32)
+    // ---- Key / mode / modulation (Analysis/KeyDetector) --------------------
+    //  Replaces the old single-histogram, major-or-minor-only correlation. The
+    //  detector is confidence-weighted, knows six modes, segments the take so a
+    //  modulation is visible, and reports ambiguity instead of inventing
+    //  certainty a monophonic melody cannot support.
     {
-        std::array<double, 12> hist {};
-        for (float hz : pitchFrames)
+        // The analysis hop is one FFT frame; pitchFrames holds VOICED frames
+        // only, so this is a "sung time" axis (see KeyDetector::analyseFrames).
+        const double frameRate = fs / (double) fftSize;
+        const auto key = KeyDetector::analyseFrames (pitchFrames, frameRate);
+
+        s.keyChromatic = key.chromatic;
+        s.keySummary   = key.summary;
+
+        if (key.isValid())
         {
-            const int midi = (int) std::round (69.0f + 12.0f * std::log2 (hz / 440.0f));
-            hist[(size_t) (((midi % 12) + 12) % 12)] += 1.0;
+            s.keyRoot       = key.global.root;
+            s.keyConfidence = key.global.confidence;
+            s.keyScaleType  = key.global.scaleType();
+            s.keyAmbiguous  = key.ambiguous;
+            s.keyModulates  = key.modulationDetected;
+            s.keyName       = key.global.name();
+
+            // Backward-compatible major/minor flag for existing consumers.
+            s.keyIsMajor = key.global.mode == KeyMode::Major
+                        || key.global.mode == KeyMode::Mixolydian;
         }
-
-        static constexpr std::array<double, 12> majP { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09,
-                                                       2.52, 5.19, 2.39, 3.66, 2.29, 2.88 };
-        static constexpr std::array<double, 12> minP { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53,
-                                                       2.54, 4.75, 3.98, 2.69, 3.34, 3.17 };
-
-        auto correlate = [&hist] (const std::array<double, 12>& prof, int rot)
-        {
-            double hx = 0, px = 0;
-            for (int i = 0; i < 12; ++i) { hx += hist[(size_t) i]; px += prof[(size_t) i]; }
-            hx /= 12.0; px /= 12.0;
-            double num = 0, dh = 0, dp = 0;
-            for (int i = 0; i < 12; ++i)
-            {
-                const double a = hist[(size_t) i] - hx;
-                const double b = prof[(size_t) (((i - rot) % 12 + 12) % 12)] - px;
-                num += a * b; dh += a * a; dp += b * b;
-            }
-            return (dh > 0 && dp > 0) ? num / std::sqrt (dh * dp) : 0.0;
-        };
-
-        double best = -2.0, second = -2.0;
-        for (int root = 0; root < 12; ++root)
-            for (int isMaj = 0; isMaj < 2; ++isMaj)
-            {
-                const double c = correlate (isMaj ? majP : minP, root);
-                if (c > best)
-                {
-                    second = best; best = c;
-                    s.keyRoot = root; s.keyIsMajor = (isMaj == 1);
-                }
-                else if (c > second)
-                    second = c;
-            }
-        s.keyConfidence = (float) juce::jlimit (0.0, 1.0, (best - second) * 4.0 + 0.2);
     }
 
     // ---- Vocal DNA: a normalized 0..1 fingerprint for the radar + brain -----

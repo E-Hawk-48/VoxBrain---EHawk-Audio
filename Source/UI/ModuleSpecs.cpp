@@ -18,10 +18,20 @@ const StageSpec& specForStage (S s)
         // Retune -----------------------------------------------------------
         { "Pitch", pitchOn, pitchLock,
           { { pitchSpeed, "Speed", "How fast the pitch snaps to the note. Fast = robotic/hard-tune, slow = natural.", true },
-            { pitchAmount, "Amount", "How strongly the vocal is pulled onto the correct pitch. 0 = off, 100% = fully tuned." } },
+            { pitchAmount, "Amount", "How strongly the vocal is pulled onto the correct pitch. 0 = off, 100% = fully tuned." },
+            { pitchHardTune, "Hard Tune", "One knob for the modern auto-tune sound: turn it up and the tuning becomes instant and robotic, overriding the natural-correction controls below." },
+            // --- expression controls (hidden in Simple mode) ---
+            { pitchFlex, "Flex", "How much natural pitch variation to leave alone. Higher = only obvious wrong notes get fixed, so the performance stays human.", true },
+            { pitchVibrato, "Vibrato", "Protects your vibrato. High = vibrato passes through untouched; low = vibrato gets tuned flat.", true },
+            { pitchTransition, "Glide", "Lets slides and bends between notes breathe instead of snapping. Turn down for stepped, robotic transitions.", true },
+            { pitchDrift, "Drift", "Pulls slow drifting off-pitch back to the note, without touching fast expression.", true },
+            { pitchSnap, "Snap", "Ignores tiny pitch differences (in cents). Small amounts keep the voice natural; 0 corrects absolutely everything.", true },
+            { pitchSensitivity, "Sens", "How eagerly the tuner decides something is a sung note. Lower it for breathy or noisy takes, raise it for quiet singing.", true },
+            { pitchHumanize, "Human", "Re-adds natural pitch movement after tuning, for a less machine-like result.", true } },
           { { pitchKey, "Key", "The musical key the tuner snaps to — set this to your song's key." },
             { pitchScale, "Scale", "The scale used for tuning (Major, Minor, Chromatic…). Match your song." },
-            { pitchLatency, "Latency", "Live = lowest delay, best for tracking/performing (won't tune very low notes); Studio = most accurate on low notes; Balanced is in between." } },
+            { pitchLatency, "Latency", "Live = lowest delay, best for tracking/performing (won't tune very low notes); Studio = most accurate on low notes; Balanced is in between." },
+            { pitchHQ, "HQ Render", "Highest-quality tracking for bouncing/exporting. Costs a little extra delay, so leave it off while recording.", true } },
           false },
 
         // Gate -------------------------------------------------------------

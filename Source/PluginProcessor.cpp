@@ -23,6 +23,8 @@ VoxBrainProcessor::VoxBrainProcessor()
     for (const char* id : { inputGain, outputGain,
                             pitchOn, pitchKey, pitchScale, pitchSpeed, pitchAmount,
                             pitchHumanize, pitchFormant, pitchLatency,
+                            pitchFlex, pitchVibrato, pitchTransition, pitchDrift,
+                            pitchSensitivity, pitchHardTune, pitchSnap, pitchHQ,
                             gateOn, gateThreshold,
                             eqOn, eqHpfFreq, eqLowShelfGain, eqMudGain, eqMudFreq,
                             eqPresenceGain, eqPresenceFreq, eqAirGain,
@@ -153,6 +155,16 @@ ChainParams VoxBrainProcessor::readChainParams() const
         rp.humanize   = v (pitchHumanize) * 0.01f;
         rp.formant    = v (pitchFormant);
         rp.latencyMode = (int) v (pitchLatency);   // 0=Live,1=Balanced,2=Studio
+
+        // ---- pro controls (see DSP/NoteIntelligence.h) ----
+        rp.flexTune            = v (pitchFlex)        * 0.01f;
+        rp.vibratoPreservation = v (pitchVibrato)     * 0.01f;
+        rp.transitionSmoothing = v (pitchTransition)  * 0.01f;
+        rp.driftCorrection     = v (pitchDrift)       * 0.01f;
+        rp.sensitivity         = v (pitchSensitivity) * 0.01f;
+        rp.hardTune            = v (pitchHardTune)    * 0.01f;
+        rp.snapThreshold       = v (pitchSnap);              // cents
+        rp.hqRender            = b (pitchHQ);
         p.retune = rp;
     }
 
@@ -398,7 +410,19 @@ void VoxBrainProcessor::finishAutoMix (const AnalysisSnapshot& snapshot,
 juce::String VoxBrainProcessor::applyChatMessage (const juce::String& message)
 {
     presets.pushUndo ("Chat: " + message);
-    return ChatEngine::handleMessage (message, apvts);
+
+    // Give the assistant access to the module rack + the last LEARN analysis so
+    // it can also add/remove/dial modules ("add a de-esser", "set the compressor
+    // up for my voice"), not just edit the fixed chain. One undo covers it all.
+    ChatEngine::Context ctx;
+    ctx.rack     = &rack;
+    ctx.snapshot = &lastSnapshot;
+    ctx.onRackChanged = [this]
+    {
+        syncRackMacros();            // new/re-dialled values become automatable
+        syncChainOrderWithRack();    // heal the unified chain order
+    };
+    return ChatEngine::handleMessage (message, apvts, std::move (ctx));
 }
 
 std::vector<mods::ModuleSuggestion> VoxBrainProcessor::suggestModules() const
