@@ -35,6 +35,8 @@ namespace vf::param
     inline constexpr auto pitchHardTune    = "pitch_hardtune";    // % macro → instant snap
     inline constexpr auto pitchSnap        = "pitch_snap";        // cents dead-zone
     inline constexpr auto pitchHQ          = "pitch_hq";          // bool: HQ render mode
+    inline constexpr auto pitchTranspose   = "pitch_transpose";   // semitones, free shift
+    inline constexpr auto voiceCharacter   = "voice_character";   // choice: Off, Demonic, Child…
 
     // ---- Gate / Expander ---------------------------------------------------
     inline constexpr auto gateOn        = "gate_on";

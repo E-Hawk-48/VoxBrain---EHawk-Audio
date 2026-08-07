@@ -18,7 +18,8 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
                      [&p] (std::vector<ChainItem> order, juce::StringArray rackIds)
                           { p.applyChainArrangement (std::move (order), rackIds); },
                      [&p] { p.autoBuildRack(); },
-                     [&p] { return p.suggestModules(); } }),
+                     [&p] { return p.suggestModules(); },
+                     [&p] (int idx) { p.applyVoiceCharacter (idx); } }),
       presetBrowser (p.getPresetLibrary(),
                      [&p] (const Preset& pr) { p.applyPreset (pr); },
                      [&p] { return p.captureCurrentAsPreset(); },

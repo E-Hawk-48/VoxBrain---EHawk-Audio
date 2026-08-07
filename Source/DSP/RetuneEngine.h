@@ -53,6 +53,13 @@ struct RetuneParams
     float transitionSmoothing = 0.60f;  // 0..1 let slides/bends breathe
     float driftCorrection     = 0.50f;  // 0..1 pull long-term drift back to pitch
 
+    /** FREE TRANSPOSITION, in semitones — independent of pitch correction.
+        Correction decides WHICH note the singer should be on; this shifts the
+        whole voice by a fixed interval on top of that. They multiply, so you can
+        hard-tune to a scale AND drop the result an octave (the "demonic" trick).
+        0 = off and the engine behaves exactly as it did before this existed. */
+    float transposeSemis = 0.0f;  // -24 .. +24
+
     float sensitivity   = 0.5f;   // 0..1 tracking sensitivity (voicing bias)
     /** ONE-KNOB "modern auto-tune": blends every musical allowance toward zero
         and the glide toward instant. At 1.0 the result is the classic hard-tuned
@@ -159,7 +166,9 @@ private:
     // Grain scheduler state
     double nextGrainOut = 0.0;                     // absolute output position
     double lastSourceCentre = 0.0;
-    float  currentRatio = 1.0f;
+    float  currentRatio = 1.0f;      // correction x transpose (what grains use)
+    float  correctionRatio = 1.0f;   // the glided correction component alone
+    float  transposeRatio = 1.0f;    // fixed interval, not glided
     bool   gridValid = false;                      // source grid continuity flag
 
     std::atomic<float> uiInHz { 0.0f }, uiTargetHz { 0.0f };

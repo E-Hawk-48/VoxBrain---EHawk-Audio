@@ -194,7 +194,6 @@ KeyAnalysis KeyDetector::analyse (const std::vector<Frame>& frames)
 
     const double firstT = f.front().timeSec;
     const double lastT  = f.back().timeSec;
-    const double span   = std::max (0.001, lastT - firstT);
 
     // ---- CONFIDENCE-WEIGHTED pitch-class histogram --------------------
     // Weighting by tracker confidence is what stops a doubtful frame on a

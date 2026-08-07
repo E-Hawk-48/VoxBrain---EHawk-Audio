@@ -117,6 +117,8 @@ void RetuneEngine::reset()
     nextGrainOut = 1.0;
     lastSourceCentre = 0.0;
     currentRatio = 1.0f;
+    correctionRatio = 1.0f;
+    transposeRatio = 1.0f;
     gridValid = false;
 }
 
@@ -398,9 +400,30 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                       : std::exp (-1.0f / ((float) fs * effGlideMs * 0.001f));
 
     const float  humanize     = juce::jlimit (0.0f, 1.0f, p.humanize);
-    const float  formantSemis = juce::jlimit (-5.0f, 5.0f, p.formant);
+
+    // Free transposition. Range is +/-24 semitones so a voice can be dropped two
+    // octaves ("demonic") or lifted two ("chipmunk"); the grain scheduler's own
+    // clamp below is widened to match, since it previously stopped at one octave.
+    transposeRatio = std::pow (2.0f, juce::jlimit (-24.0f, 24.0f, p.transposeSemis) / 12.0f);
+
+    // Formant range widened from +/-5 to +/-12 semitones: a convincing child or
+    // giant needs the spectral envelope moved much further than a corrective
+    // formant nudge ever did.
+    const float  formantSemis = juce::jlimit (-12.0f, 12.0f, p.formant);
     const double formantRatio = std::pow (2.0, (double) formantSemis / 12.0);
     const double formantSpan  = std::max (1.0, formantRatio);   // for availability clamp
+
+    // THE GRAIN ENGINE RUNS FOR TRANSPOSITION TOO, not just correction.
+    //   `correcting`    — quantize to a scale (the auto-tune half).
+    //   `engineActive`  — resynthesise at all. Transposition is a pure grain
+    //                     respacing, so it needs the pipeline but NOT the
+    //                     quantizer; a voice changer should not force the singer
+    //                     onto a scale just to drop them an octave.
+    // Deliberately NOT gated on `formant`: with pitch off, the formant knob has
+    // always been inert, and quietly changing that would alter existing sessions.
+    // Voice characters that want formant-only enable pitch with amount 0.
+    const bool correcting   = p.on;
+    const bool engineActive = p.on || std::abs (p.transposeSemis) > 0.001f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -423,12 +446,12 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
         //    wastes headroom and, on smaller DAW buffers, is enough to push the
         //    plugin into dropouts — heard as choppy/glitchy audio. Skip it when
         //    bypassed; it warms back up in a fraction of a second when re-enabled.
-        if (p.on)
+        if (engineActive)
             pushAnalysis (mono);
         else
             uiInHz.store (0.0f);
 
-        if (p.on)
+        if (engineActive)
         {
             // 3. Correction ratio (cents domain, glided)
             //    Humanize: quantize a centre that blends the instantaneous pitch
@@ -436,7 +459,7 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
             //    (musical, note-stable), then re-add the natural deviation around
             //    it scaled by `humanize` so vibrato/scoops survive.
             float targetCents = 0.0f;
-            if (voicedState && currentF0 > 0.0f)
+            if (correcting && voicedState && currentF0 > 0.0f)
             {
                 const float centreHz = (f0Center > 0.0f)
                                      ? currentF0 * (1.0f - humanize) + f0Center * humanize
@@ -476,11 +499,17 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                 uiTargetHz.store (0.0f);
             }
 
-            const float currentCents = 1200.0f * std::log2 (juce::jmax (0.25f, currentRatio));
+            // The CORRECTION ratio is glided; it answers "how far to the right
+            // note". Transposition is a separate, fixed interval applied on top,
+            // so the two multiply: hard-tune to a scale AND drop an octave.
+            // It is deliberately NOT glided — a transpose is a setting, not a
+            // performance, and ramping it would smear the effect on every note.
+            const float currentCents = 1200.0f * std::log2 (juce::jmax (0.02f, correctionRatio));
             const float newCents = voicedState
                                  ? glide * currentCents + (1.0f - glide) * targetCents
                                  : 0.999f * currentCents;   // ease to unity when unvoiced
-            currentRatio = std::pow (2.0f, newCents / 1200.0f);
+            correctionRatio = std::pow (2.0f, newCents / 1200.0f);
+            currentRatio    = correctionRatio * transposeRatio;
 
             // 4. Fire due grains (max grain half-span scales with the active delay)
             const int P = juce::jlimit (32, (delaySamples - activeGrainMargin) / 2,
@@ -515,7 +544,8 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
 
                 fireGrain (nextGrainOut, src, P, n, formantRatio);
                 lastSourceCentre = src;
-                nextGrainOut += (double) P / (double) juce::jmax (0.5f, currentRatio);
+                // Floor lowered from 0.5 (one octave) so two-octave drops are reachable.
+                nextGrainOut += (double) P / (double) juce::jmax (0.2f, currentRatio);
             }
             if (! voicedState)
                 gridValid = false;
@@ -541,6 +571,7 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
             nextGrainOut = (double) (n + 1);
             lastSourceCentre = (double) (n - delaySamples);
             currentRatio = 1.0f;
+            correctionRatio = 1.0f;
             gridValid = false;
 
             const auto rIdx = (size_t) (n & mask);

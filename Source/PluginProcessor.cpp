@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "DSP/VoiceCharacter.h"
 #include "Modules/ModuleRegistry.h"
 #include "Preset/FactoryPresetLibrary.h"
 #include "Reference/ReferencePreset.h"
@@ -25,6 +26,7 @@ VoxBrainProcessor::VoxBrainProcessor()
                             pitchHumanize, pitchFormant, pitchLatency,
                             pitchFlex, pitchVibrato, pitchTransition, pitchDrift,
                             pitchSensitivity, pitchHardTune, pitchSnap, pitchHQ,
+                            pitchTranspose, voiceCharacter,
                             gateOn, gateThreshold,
                             eqOn, eqHpfFreq, eqLowShelfGain, eqMudGain, eqMudFreq,
                             eqPresenceGain, eqPresenceFreq, eqAirGain,
@@ -154,6 +156,7 @@ ChainParams VoxBrainProcessor::readChainParams() const
         rp.majorScale = major;
         rp.humanize   = v (pitchHumanize) * 0.01f;
         rp.formant    = v (pitchFormant);
+        rp.transposeSemis = v (pitchTranspose);   // free interval, independent of correction
         rp.latencyMode = (int) v (pitchLatency);   // 0=Live,1=Balanced,2=Studio
 
         // ---- pro controls (see DSP/NoteIntelligence.h) ----
@@ -781,6 +784,64 @@ bool VoxBrainProcessor::isModuleLocked (const juce::String& paramId) const
         if (auto* lv = apvts.getRawParameterValue (lock))
             return lv->load() > 0.5f;
     return false;
+}
+
+// ============================================================================
+//  Voice Changer
+// ============================================================================
+//  A character is applied through exactly the same route as every other AI
+//  decision — natural units converted to normalised and written with a host
+//  gesture — so it is automatable, undoable in one step, savable as a preset,
+//  and it respects a locked module. Nothing here touches the audio thread.
+juce::String VoxBrainProcessor::applyVoiceCharacterById (const juce::String& id)
+{
+    const auto* prof = vf::VoiceCharacters::byId (id);
+    if (prof == nullptr)
+        return {};
+
+    // Keep the menu parameter in step, whether the request came from the menu,
+    // the chat assistant, or a preset. Written first so a single undo restores
+    // both the selection and the settings it produced.
+    presets.pushUndo ("Voice: " + prof->name);
+
+    if (auto* sel = apvts.getParameter (vf::param::voiceCharacter))
+    {
+        const int idx = vf::VoiceCharacters::indexOf (id);
+        sel->beginChangeGesture();
+        sel->setValueNotifyingHost (sel->convertTo0to1 ((float) idx));
+        sel->endChangeGesture();
+    }
+
+    for (const auto& t : prof->targets)
+    {
+        if (isModuleLocked (t.paramId))
+            continue;   // locked module — the character leaves it alone
+
+        if (auto* param = apvts.getParameter (t.paramId))
+        {
+            param->beginChangeGesture();
+            param->setValueNotifyingHost (param->convertTo0to1 (t.value));
+            param->endChangeGesture();
+        }
+    }
+
+    if (presets.onStateChanged) presets.onStateChanged();
+    return prof->sound;
+}
+
+juce::String VoxBrainProcessor::applyVoiceCharacter (int menuIndex)
+{
+    const auto* prof = vf::VoiceCharacters::byIndex (menuIndex);
+    if (prof == nullptr || prof->id == "off")
+        return {};
+    return applyVoiceCharacterById (prof->id);
+}
+
+int VoxBrainProcessor::currentVoiceCharacter() const
+{
+    if (auto* p = apvts.getRawParameterValue (vf::param::voiceCharacter))
+        return (int) p->load();
+    return 0;
 }
 
 void VoxBrainProcessor::applyBrainResult (const AutoMixBrain::Result& r)

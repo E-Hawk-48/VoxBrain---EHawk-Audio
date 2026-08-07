@@ -28,6 +28,14 @@ public:
     /** Show/hide this card's advanced controls; re-lays out visible ones. */
     void setSimpleMode (bool simple);
 
+    /** Fired when the USER picks a combo item (paramId, 0-based index).
+        The attachment has already written the parameter; this exists for the
+        few combos that are ACTIONS rather than settings — currently the Voice
+        Changer, where choosing a character has to apply a batch of settings.
+        Deliberately not driven from parameterChanged, so loading a preset or
+        an automation move cannot re-stomp the user's own tweaks. */
+    std::function<void (const juce::String& paramId, int index)> onComboSelected;
+
 private:
     void parameterChanged (const juce::String& id, float value) override;
     void handleAsyncUpdate() override;

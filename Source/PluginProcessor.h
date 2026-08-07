@@ -136,6 +136,18 @@ public:
     /** Load a full preset (params + rack). Pushes undo so it's revertible. */
     void applyPreset (const Preset& p);
 
+
+    // ---- Voice Changer ------------------------------------------------------
+    //  Applies a whole character (see DSP/VoiceCharacter.h) as one undoable
+    //  batch, honouring module locks exactly like AutoMix and the chat engine.
+    //  Selecting "Off" (index 0) writes nothing — it stops imposing a character
+    //  rather than trying to guess what the voice sounded like before.
+    //  Returns the plain-language description, or an empty string for Off.
+    juce::String applyVoiceCharacter (int menuIndex);
+    juce::String applyVoiceCharacterById (const juce::String& id);
+    /** The character currently selected in the menu (index, 0 = Off). */
+    int  currentVoiceCharacter() const;
+
     /** Last auto-mix result (message thread only). */
     const AutoMixBrain::Result& getLastResult() const noexcept { return lastResult; }
     std::function<void()> onAutoMixApplied;   // GUI callback
@@ -145,6 +157,7 @@ private:
     ChainParams readChainParams() const;
     void applyBrainResult (const AutoMixBrain::Result& r);
     bool isModuleLocked (const juce::String& paramId) const;
+
 
     // LEARN → auto-populate the rack with complementary polish (additive to the
     // fixed chain; only when the rack is empty so it never clobbers a user rack).

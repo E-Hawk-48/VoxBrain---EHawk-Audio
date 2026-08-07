@@ -1,4 +1,5 @@
 #include "ChatEngine.h"
+#include "../DSP/VoiceCharacter.h"
 #include "../Parameters.h"
 #include "../Brain/GenreProfiles.h"
 #include "../Brain/ModuleIntelligence.h"
@@ -546,6 +547,51 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
         }
     }
 
+    // ---- VOICE CHARACTERS ---------------------------------------------------
+    //  "make me sound demonic", "turn me into a robot". Handled with the same
+    //  per-clause, longest-alias, absolute-targets treatment as genres, and for
+    //  the same reason: a character is a foundation the later vocabulary rules
+    //  can still adjust ("demonic but less reverb").
+    //  Ordered AFTER genre deliberately — if someone asks for both, the costume
+    //  should win over the mix style, since it is the more specific request.
+    juce::StringArray voiceReplies;
+    const VoiceProfile* appliedVoice = nullptr;
+    for (const auto& clauseRaw : clauses)
+    {
+        const auto* vc = VoiceCharacters::match (clauseRaw.toLowerCase());
+        if (vc == nullptr || vc == appliedVoice) continue;
+        appliedVoice = vc;
+
+        int applied = 0, lockedHits = 0;
+
+        // Keep the Voice menu in step with what the chat just did, so the UI
+        // never claims "Off" while a character is plainly audible.
+        if (auto* sel = apvts.getParameter (vf::param::voiceCharacter))
+        {
+            const int idx = VoiceCharacters::indexOf (vc->id);
+            sel->setValueNotifyingHost (sel->convertTo0to1 ((float) idx));
+        }
+
+        for (const auto& t : vc->targets)
+        {
+            if (moduleLocked (apvts, t.paramId)) { ++lockedHits; continue; }
+            applyMove (apvts, { t.paramId, t.value, true }, 1.0f, false);
+            ++applied;
+        }
+
+        if (applied > 0)
+        {
+            juce::String line = vc->name + " voice: " + vc->sound;
+            if (lockedHits > 0)
+                line += " (left your locked modules alone)";
+            voiceReplies.add (line);
+        }
+        else if (lockedHits > 0)
+        {
+            voiceReplies.add ("Everything the " + vc->name + " voice would touch is locked — unlock a module first");
+        }
+    }
+
     for (const auto& clauseRaw : clauses)
     {
         juce::String cl;                          // normalise this clause
@@ -575,7 +621,7 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
         }
     }
 
-    if (matches.empty() && genreReplies.isEmpty() && moduleReplies.isEmpty())
+    if (matches.empty() && genreReplies.isEmpty() && voiceReplies.isEmpty() && moduleReplies.isEmpty())
         return "I didn't catch a mixing move in that. Try things like: \"darker\", "
                "\"more air\", \"punchier\", \"warmer\", \"make it pop\", \"tuck it back\", "
                "\"more human\", \"deeper voice\", \"minor key\", \"hard tune\", "
@@ -584,7 +630,8 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
              + GenreProfiles::examplesForHelp (8)
              + " (I know " + juce::String ((int) GenreProfiles::all().size())
              + " across " + juce::String (GenreProfiles::families().size())
-             + " families) — or say \"reset\".";
+             + " families), or a voice character like \"demonic\", \"child\", "
+               "\"robot\", \"chipmunk\", \"radio voice\" — or say \"reset\".";
 
     // Apply and build the reply
     juce::StringArray replies;
@@ -611,6 +658,7 @@ juce::String ChatEngine::handleMessage (const juce::String& message,
     // parameter adjustments made on top.
     juce::StringArray all;
     all.addArray (genreReplies);
+    all.addArray (voiceReplies);
     all.addArray (moduleReplies);
     all.addArray (replies);
 

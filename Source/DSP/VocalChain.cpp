@@ -107,6 +107,10 @@ void VocalEq::prepare (const juce::dsp::ProcessSpec& spec)
     for (auto* f : { &hpf, &lowShelf, &mud, &presence, &air })
         f->prepare (spec);
     lastParams.hpfHz = -1.0f;   // force coefficient rebuild
+
+    for (auto* sg : { &sHpf, &sLowShelf, &sMud, &sMudFreq, &sPres, &sPresFreq, &sAir })
+        sg->prepare (spec.sampleRate);
+    eqPrimed = false;
 }
 
 void VocalEq::updateCoefficients (const EqParams& p)
@@ -125,20 +129,82 @@ void VocalEq::process (juce::AudioBuffer<float>& buffer, const EqParams& p)
 {
     if (! p.on) return;
 
-    const bool changed = p.hpfHz != lastParams.hpfHz || p.lowShelfDb != lastParams.lowShelfDb
-                      || p.mudDb != lastParams.mudDb || p.mudHz != lastParams.mudHz
-                      || p.presDb != lastParams.presDb || p.presHz != lastParams.presHz
-                      || p.airDb != lastParams.airDb;
-    if (changed)
-        updateCoefficients (p);
+    // Swapping IIR coefficients instantly makes a knob sweep or an automated
+    // move step audibly. The parameter VALUES are ramped instead, and while they
+    // move the block is processed in short sub-blocks so each coefficient update
+    // is a small change. At rest this collapses to exactly the original path:
+    // one coefficient update on change, then the whole block in one pass.
+    sHpf     .setTarget (p.hpfHz);
+    sLowShelf.setTarget (p.lowShelfDb);
+    sMud     .setTarget (p.mudDb);
+    sMudFreq .setTarget (p.mudHz);
+    sPres    .setTarget (p.presDb);
+    sPresFreq.setTarget (p.presHz);
+    sAir     .setTarget (p.airDb);
 
-    juce::dsp::AudioBlock<float> block (buffer);
-    juce::dsp::ProcessContextReplacing<float> ctx (block);
-    hpf.process (ctx);
-    lowShelf.process (ctx);
-    mud.process (ctx);
-    presence.process (ctx);
-    air.process (ctx);
+    const bool moving = ! (sHpf.isStatic() && sLowShelf.isStatic() && sMud.isStatic()
+                        && sMudFreq.isStatic() && sPres.isStatic() && sPresFreq.isStatic()
+                        && sAir.isStatic());
+
+    auto currentParams = [&]
+    {
+        EqParams e = p;
+        e.hpfHz      = sHpf.current();
+        e.lowShelfDb = sLowShelf.current();
+        e.mudDb      = sMud.current();
+        e.mudHz      = sMudFreq.current();
+        e.presDb     = sPres.current();
+        e.presHz     = sPresFreq.current();
+        e.airDb      = sAir.current();
+        return e;
+    };
+
+    auto runFilters = [this] (juce::AudioBuffer<float>& buf, int start, int count)
+    {
+        juce::dsp::AudioBlock<float> block (buf);
+        auto sub = block.getSubBlock ((size_t) start, (size_t) count);
+        juce::dsp::ProcessContextReplacing<float> ctx (sub);
+        hpf.process (ctx);
+        lowShelf.process (ctx);
+        mud.process (ctx);
+        presence.process (ctx);
+        air.process (ctx);
+    };
+
+    const int numSamples = buffer.getNumSamples();
+
+    if (! moving)
+    {
+        const auto cur = currentParams();
+        const bool changed = cur.hpfHz != lastParams.hpfHz || cur.lowShelfDb != lastParams.lowShelfDb
+                          || cur.mudDb != lastParams.mudDb || cur.mudHz != lastParams.mudHz
+                          || cur.presDb != lastParams.presDb || cur.presHz != lastParams.presHz
+                          || cur.airDb != lastParams.airDb;
+        if (changed || ! eqPrimed)
+        {
+            updateCoefficients (cur);
+            eqPrimed = true;
+        }
+        runFilters (buffer, 0, numSamples);
+        return;
+    }
+
+    // While moving: 32-sample sub-blocks. Small enough that the per-update
+    // coefficient change is inaudible, large enough that the extra cost only
+    // occurs during an actual move.
+    const int kSub = 32;
+    for (int start = 0; start < numSamples; start += kSub)
+    {
+        const int count = juce::jmin (kSub, numSamples - start);
+
+        // Advance the ramps by this sub-block, then rebuild from where they land.
+        sHpf.skip (count); sLowShelf.skip (count); sMud.skip (count);
+        sMudFreq.skip (count); sPres.skip (count); sPresFreq.skip (count); sAir.skip (count);
+
+        updateCoefficients (currentParams());
+        eqPrimed = true;
+        runFilters (buffer, start, count);
+    }
 }
 
 // ============================================================================
@@ -297,6 +363,8 @@ void Compressor::prepare (const juce::dsp::ProcessSpec& spec)
     envelopeDb = -100.0f;
     msEnv      = 0.0f;
     lastGrAmt  = 0.0f;
+    sMakeup.prepare (spec.sampleRate);
+    sMix.prepare (spec.sampleRate);
 }
 
 void Compressor::process (juce::AudioBuffer<float>& buffer, const CompParams& p)
@@ -305,9 +373,24 @@ void Compressor::process (juce::AudioBuffer<float>& buffer, const CompParams& p)
 
     const int numSamples = buffer.getNumSamples();
     const int numCh = buffer.getNumChannels();
-    const float mix = juce::jlimit (0.0f, 1.0f, p.mix);
 
-    if (mix < 1.0f)
+    // Makeup and mix used to be constants applied per block. Smoothing them is
+    // what stops an automated (or AI-written) change from clicking.
+    sMakeup.setTarget (dbToGain (p.makeupDb));
+    sMix.setTarget (juce::jlimit (0.0f, 1.0f, p.mix));
+
+    const float mix = sMix.current();
+    const bool mixStatic = sMix.isStatic();
+
+    // Bit-exact dry when fully dry and at rest — the contract the test pins down.
+    if (mixStatic && mix <= 0.0f)
+    {
+        sMakeup.skip (numSamples);
+        grDb.store (0.0f);
+        return;
+    }
+
+    if (mix < 1.0f || ! mixStatic)
         for (int c = 0; c < numCh; ++c)
             dryCopy.copyFrom (c, 0, buffer, c, 0, numSamples);
 
@@ -318,7 +401,8 @@ void Compressor::process (juce::AudioBuffer<float>& buffer, const CompParams& p)
     const float relSlow = tau (fs, p.releaseMs * 3.0f);
     const float msCoef  = tau (fs, 5.0f);        // ~5 ms RMS detector window
     const float kneeDb  = 6.0f;
-    const float makeup  = dbToGain (p.makeupDb);
+    const bool makeupStatic = sMakeup.isStatic();
+    const float makeupFixed = sMakeup.current();
     const float ratioSlope = 1.0f - 1.0f / juce::jmax (1.0f, p.ratio);
     float maxGr = 0.0f;
 
@@ -365,17 +449,33 @@ void Compressor::process (juce::AudioBuffer<float>& buffer, const CompParams& p)
         lastGrAmt = grAmt;
 
         maxGr = std::max (maxGr, grAmt);
+        const float makeup = makeupStatic ? makeupFixed : sMakeup.next();
         const float g = dbToGain (-grAmt) * makeup;
         for (int c = 0; c < numCh; ++c)
             buffer.setSample (c, i, buffer.getSample (c, i) * g);
     }
 
-    if (mix < 1.0f)
-        for (int c = 0; c < numCh; ++c)
+    // Parallel blend. When the mix is moving the ramp must be applied per sample
+    // and identically across channels, or the two paths drift apart.
+    if (mixStatic)
+    {
+        if (mix < 1.0f)
+            for (int c = 0; c < numCh; ++c)
+            {
+                buffer.applyGain (c, 0, numSamples, mix);
+                buffer.addFrom (c, 0, dryCopy, c, 0, numSamples, 1.0f - mix);
+            }
+    }
+    else
+    {
+        for (int i = 0; i < numSamples; ++i)
         {
-            buffer.applyGain (c, 0, numSamples, mix);
-            buffer.addFrom (c, 0, dryCopy, c, 0, numSamples, 1.0f - mix);
+            const float m = sMix.next();
+            for (int c = 0; c < numCh; ++c)
+                buffer.setSample (c, i, buffer.getSample (c, i) * m
+                                        + dryCopy.getSample (c, i) * (1.0f - m));
         }
+    }
 
     grDb.store (maxGr);
 }
@@ -942,6 +1042,9 @@ void VocalChain::prepare (const juce::dsp::ProcessSpec& spec)
     delay.prepare (spec);
     verb.prepare (spec);
     limiter.prepare (spec);
+
+    sInputGain.prepare (spec.sampleRate);
+    sOutputGain.prepare (spec.sampleRate);
 }
 
 void VocalChain::reset()
@@ -1018,16 +1121,47 @@ void VocalChain::processStage (Stage s, juce::AudioBuffer<float>& buffer, const 
     }
 }
 
+// ---------------------------------------------------------------------------
+//  Trim. Previously `buffer.applyGain(constant)` — a step at every block
+//  boundary. Now ramped, with the original whole-block path preserved whenever
+//  the value is at rest so a static setting costs exactly what it always did.
+// ---------------------------------------------------------------------------
+namespace
+{
+    void applySmoothedGain (juce::AudioBuffer<float>& buffer, SmoothedGain& sg, float targetLin)
+    {
+        sg.setTarget (targetLin);
+
+        const int n = buffer.getNumSamples();
+        const int nc = buffer.getNumChannels();
+
+        if (sg.isStatic())
+        {
+            const float g = sg.current();
+            if (g != 1.0f) buffer.applyGain (g);
+            return;
+        }
+
+        // Ramping: apply per sample so the change is continuous. Every channel
+        // must see the SAME ramp, so the smoother is advanced once per sample
+        // and the value reused across channels.
+        for (int i = 0; i < n; ++i)
+        {
+            const float g = sg.next();
+            for (int c = 0; c < nc; ++c)
+                buffer.setSample (c, i, buffer.getSample (c, i) * g);
+        }
+    }
+}
+
 void VocalChain::applyInputGain (juce::AudioBuffer<float>& buffer, const ChainParams& p)
 {
-    if (p.inputGainDb != 0.0f)
-        buffer.applyGain (dbToGain (p.inputGainDb));
+    applySmoothedGain (buffer, sInputGain, dbToGain (p.inputGainDb));
 }
 
 void VocalChain::applyOutputGain (juce::AudioBuffer<float>& buffer, const ChainParams& p)
 {
-    if (p.outputGainDb != 0.0f)
-        buffer.applyGain (dbToGain (p.outputGainDb));
+    applySmoothedGain (buffer, sOutputGain, dbToGain (p.outputGainDb));
 }
 
 void VocalChain::process (juce::AudioBuffer<float>& buffer, const ChainParams& p)

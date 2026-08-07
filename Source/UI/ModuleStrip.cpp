@@ -55,6 +55,17 @@ ModuleCard::ModuleCard (juce::AudioProcessorValueTreeState& apvtsRef,
 
         combo->attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             apvts, spec.paramId, combo->box);
+
+        // ComboBoxParameterAttachment is a ComboBox::Listener, so `onChange` is
+        // free for us to use and fires AFTER the parameter has been written.
+        const auto id = spec.paramId;
+        auto* raw = &combo->box;
+        raw->onChange = [this, id, raw]
+        {
+            if (onComboSelected && raw->getSelectedItemIndex() >= 0)
+                onComboSelected (id, raw->getSelectedItemIndex());
+        };
+
         comboList.push_back (std::move (combo));
     }
 

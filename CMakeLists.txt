@@ -84,6 +84,7 @@ target_sources(VoxBrain PRIVATE
     Source/DSP/RetuneEngine.cpp
     Source/DSP/PitchTracker.cpp
     Source/DSP/NoteIntelligence.cpp
+    Source/DSP/VoiceCharacter.cpp
     Source/Brain/AutoMixBrain.cpp
     Source/Brain/ModuleIntelligence.cpp
     Source/Brain/GenreProfiles.cpp
@@ -211,4 +212,64 @@ if(WIN32)
     endforeach()
 else()
     target_compile_definitions(VoxBrain PUBLIC VB_HAS_ONNX=0)
+endif()
+
+# ============================================================================
+#  TEST SUITE  (Phase 0 of the architecture review)
+# ----------------------------------------------------------------------------
+#  Every DSP claim in this project used to be proved by a harness compiled in a
+#  temp folder, run once and discarded — roughly three hundred assertions that
+#  could never be re-run, so a later regression would have been invisible. These
+#  targets make that verification permanent and repeatable.
+#
+#  OFF by default: the normal plugin build a non-programmer runs must stay fast
+#  and must never be broken by test code. `Scripts\run_tests.bat` configures a
+#  SEPARATE build directory with this ON, so the two never interfere.
+# ============================================================================
+option(VB_BUILD_TESTS "Build the VoxBrain test suite" OFF)
+
+if(VB_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(VoxBrainTests
+        Tests/TestMain.cpp
+        Tests/Test_PitchTracker.cpp
+        Tests/Test_NoteIntelligence.cpp
+        Tests/Test_KeyDetector.cpp
+        Tests/Test_RetuneEngine.cpp
+        Tests/Test_VoiceChanger.cpp
+        Tests/Test_Compressor.cpp
+        Tests/Test_Smoothing.cpp
+
+        # The engine code under test. Deliberately compiled INTO the test binary
+        # rather than linked from the plugin: these units are pure DSP with no
+        # APVTS/GUI dependency, which is exactly why they are testable at all.
+        Source/DSP/PitchTracker.cpp
+        Source/DSP/NoteIntelligence.cpp
+        Source/DSP/RetuneEngine.cpp
+        Source/DSP/VoiceCharacter.cpp
+        Source/DSP/VocalChain.cpp
+        Source/Analysis/KeyDetector.cpp
+    )
+
+    target_compile_definitions(VoxBrainTests PRIVATE
+        JUCE_STANDALONE_APPLICATION=1
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        VB_HAS_ONNX=0
+    )
+
+    target_link_libraries(VoxBrainTests
+        PRIVATE
+            juce::juce_dsp
+            juce::juce_audio_basics
+        PUBLIC
+            juce::juce_recommended_config_flags
+    )
+
+    if(MSVC)
+        target_compile_options(VoxBrainTests PRIVATE /arch:AVX2 /fp:fast)
+    endif()
+
+    add_test(NAME VoxBrainTests COMMAND VoxBrainTests)
 endif()

@@ -281,6 +281,15 @@ void ChainView::buildFocusPanel()
         stagePanel = std::make_unique<ModuleCard> (apvts, spec.title, spec.bypassId, spec.lockId,
                                                    spec.knobs, spec.combos);
         stagePanel->setSimpleMode (simpleMode);
+
+        // Most combos are plain settings the attachment handles alone. The Voice
+        // menu is the exception: choosing a character has to APPLY a batch of
+        // settings, and only a deliberate user pick should do that.
+        stagePanel->onComboSelected = [this] (const juce::String& id, int index)
+        {
+            if (id == vf::param::voiceCharacter && hooks.applyVoiceCharacter)
+                hooks.applyVoiceCharacter (index);
+        };
         addAndMakeVisible (*stagePanel);
     }
     else

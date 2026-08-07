@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include "DSP/VoiceCharacter.h"
 
 namespace vf::param
 {
@@ -48,8 +49,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                 ms  (pitchSpeed,   "Retune Speed", 0.0f, 400.0f, 60.0f),
                 pct (pitchAmount,  "Correction",   100.0f),
                 pct (pitchHumanize,"Humanize",     0.0f),
+                // Formant range widened -5..5 -> -12..12: a convincing child or
+                // giant needs the spectral envelope moved far further than a
+                // corrective nudge. Old sessions are unaffected (default 0).
                 std::make_unique<APF> (juce::ParameterID { pitchFormant, 1 }, "Formant",
-                                       Range { -5.0f, 5.0f, 0.1f }, 0.0f),
+                                       Range { -12.0f, 12.0f, 0.1f }, 0.0f),
+                // FREE transposition, independent of correction. Two octaves each
+                // way covers everything from "demonic" to "chipmunk".
+                std::make_unique<APF> (juce::ParameterID { pitchTranspose, 1 }, "Transpose",
+                                       Range { -24.0f, 24.0f, 1.0f }, 0.0f),
                 // Retune latency vs low-note accuracy. Default Studio = the
                 // original engine (unchanged). Live roughly halves the delay.
                 std::make_unique<juce::AudioParameterChoice> (
@@ -70,7 +78,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                 // (the combo binding populates its items from a choice list).
                 std::make_unique<juce::AudioParameterChoice> (
                     juce::ParameterID { pitchHQ, 1 }, "HQ Render",
-                    juce::StringArray { "Off", "On" }, 0));
+                    juce::StringArray { "Off", "On" }, 0),
+                // VOICE CHANGER. The item list comes straight from the character
+                // table (DSP/VoiceCharacter.h) so the menu and the settings can
+                // never drift apart. Index 0 is always "Off" and the order is a
+                // stable API — append new characters, never reorder.
+                std::make_unique<juce::AudioParameterChoice> (
+                    juce::ParameterID { voiceCharacter, 1 }, "Voice",
+                    vf::VoiceCharacters::menuNames(), 0));
 
     // Gate
     layout.add (onOff (gateOn, "Gate", true),

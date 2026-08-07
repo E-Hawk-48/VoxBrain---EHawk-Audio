@@ -47,6 +47,56 @@ struct ChainParams
 };
 
 // ---------------------------------------------------------------------------
+//  SmoothedGain — the fix for a real, audible defect.
+//
+//  Until this existed there was NO parameter smoothing anywhere in the chain:
+//  gains and mixes were applied as a single constant per block, so automating
+//  input trim (or the AI writing it) produced a step at every block boundary —
+//  i.e. a click. It went unnoticed because the plugin is normally auditioned on
+//  STATIC settings, which is exactly the case where a step is inaudible.
+//
+//  Deliberately a thin wrapper rather than raw juce::SmoothedValue:
+//   * `prime()` snaps on the first block so a freshly-prepared chain does not
+//     ramp up from zero — and so "mix = 0 is bit-exact dry" stays true.
+//   * `isStatic()` lets a processor take its original whole-block fast path
+//     when nothing is moving, so smoothing costs nothing at rest.
+// ---------------------------------------------------------------------------
+class SmoothedGain
+{
+public:
+    /** `rampSeconds` ~10–20 ms: long enough to be inaudible, short enough that
+        a deliberate move still feels immediate. */
+    void prepare (double sampleRate, double rampSeconds = 0.015)
+    {
+        value.reset (sampleRate, rampSeconds);
+        primed = false;
+    }
+
+    /** Call once per block with the target. The first call after prepare snaps
+        rather than ramps. */
+    void setTarget (float target) noexcept
+    {
+        if (! primed) { value.setCurrentAndTargetValue (target); primed = true; }
+        else            value.setTargetValue (target);
+    }
+
+    /** True when the value is at rest — the caller may then use a single
+        constant for the whole block exactly as before. */
+    bool isStatic() const noexcept { return ! value.isSmoothing(); }
+
+    float current() const noexcept  { return value.getCurrentValue(); }
+    float next() noexcept           { return value.getNextValue(); }
+
+    /** Skip a block's worth of ramp without applying it (used when a stage is
+        bypassed, so it doesn't jump when re-enabled). */
+    void skip (int numSamples) noexcept { value.skip (numSamples); }
+
+private:
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> value;
+    bool primed = false;
+};
+
+// ---------------------------------------------------------------------------
 //  NoiseGate — downward expander with soft knee & smooth envelope
 // ---------------------------------------------------------------------------
 class NoiseGate
@@ -78,6 +128,13 @@ private:
                                                   juce::dsp::IIR::Coefficients<float>>;
     Filter hpf, lowShelf, mud, presence, air;
     EqParams lastParams { true, -1.0f, 0, 0, 0, 0, 0, 0 };
+
+    // Smoothed targets. Swapping IIR coefficients instantly makes an EQ sweep
+    // step audibly; these ramp the VALUES and the block is processed in short
+    // sub-blocks while they move, so the coefficient change per update is tiny.
+    // When nothing is moving the whole block takes the original single-shot path.
+    SmoothedGain sHpf, sLowShelf, sMud, sMudFreq, sPres, sPresFreq, sAir;
+    bool eqPrimed = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -147,6 +204,7 @@ public:
 
 private:
     double fs = 44100.0;
+    SmoothedGain sMakeup, sMix;   // stepped per block before smoothing existed
     float envelopeDb = -100.0f;
     float msEnv      = 0.0f;      // short-window mean-square (RMS) detector state
     float lastGrAmt  = 0.0f;      // previous sample's gain reduction (dB), for
@@ -347,5 +405,10 @@ private:
     ReverbEngine  verb;
     OutputLimiter limiter;
     juce::dsp::ProcessSpec currentSpec {};
+
+    // Input/output trim used to be applied as one constant per block — the most
+    // exposed step in the whole chain, because the AI writes input trim on every
+    // LEARN and users automate output trim.
+    SmoothedGain sInputGain, sOutputGain;
 };
 } // namespace vf

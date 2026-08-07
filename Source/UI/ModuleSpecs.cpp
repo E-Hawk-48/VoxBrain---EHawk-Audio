@@ -8,6 +8,8 @@ using S = VocalChain::Stage;
 const StageSpec& specForStage (S s)
 {
     using namespace vf::param;
+    // Local alias — the Voice Changer selector lives with the pitch controls.
+    constexpr auto pitchVoice = vf::param::voiceCharacter;
     using K = ModuleCard::KnobSpec;
     using C = ModuleCard::ComboSpec;
 
@@ -27,8 +29,12 @@ const StageSpec& specForStage (S s)
             { pitchDrift, "Drift", "Pulls slow drifting off-pitch back to the note, without touching fast expression.", true },
             { pitchSnap, "Snap", "Ignores tiny pitch differences (in cents). Small amounts keep the voice natural; 0 corrects absolutely everything.", true },
             { pitchSensitivity, "Sens", "How eagerly the tuner decides something is a sung note. Lower it for breathy or noisy takes, raise it for quiet singing.", true },
-            { pitchHumanize, "Human", "Re-adds natural pitch movement after tuning, for a less machine-like result.", true } },
-          { { pitchKey, "Key", "The musical key the tuner snaps to — set this to your song's key." },
+            { pitchHumanize, "Human", "Re-adds natural pitch movement after tuning, for a less machine-like result.", true },
+            // --- Voice Changer ---
+            { pitchTranspose, "Transpose", "Shifts the whole voice up or down in semitones (12 = a full octave). This is separate from tuning: it moves the note itself, so you can be perfectly in tune AND an octave lower." },
+            { pitchFormant, "Formant", "Changes the apparent SIZE of the singer's head and throat without changing the note. Down = bigger/deeper body, up = smaller/younger. Use it with Transpose: move both the same way for a believable bigger or smaller person, opposite ways for something inhuman." } },
+          { { pitchVoice, "Voice", "Voice Changer: pick a character (Demonic, Child, Robot, Radio…) and the whole chain is set up for it in one move. Undo restores your previous sound." },
+            { pitchKey, "Key", "The musical key the tuner snaps to — set this to your song's key." },
             { pitchScale, "Scale", "The scale used for tuning (Major, Minor, Chromatic…). Match your song." },
             { pitchLatency, "Latency", "Live = lowest delay, best for tracking/performing (won't tune very low notes); Studio = most accurate on low notes; Balanced is in between." },
             { pitchHQ, "HQ Render", "Highest-quality tracking for bouncing/exporting. Costs a little extra delay, so leave it off while recording.", true } },

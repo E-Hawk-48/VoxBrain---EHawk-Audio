@@ -37,6 +37,10 @@ public:
         std::function<void (std::vector<ChainItem>, juce::StringArray)> applyArrangement;
         std::function<void()>                    autoBuild;     // AI rack build
         std::function<std::vector<mods::ModuleSuggestion>()> suggest;   // AI advisor
+        // Voice Changer: the user picked a character in the PITCH card's Voice
+        // menu. The menu parameter is already written by its attachment; this
+        // asks the processor to apply the character's whole settings batch.
+        std::function<void (int characterIndex)> applyVoiceCharacter;
     };
 
     ChainView (juce::AudioProcessorValueTreeState& apvts,
