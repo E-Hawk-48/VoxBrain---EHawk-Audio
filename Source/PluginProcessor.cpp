@@ -117,26 +117,31 @@ void VoxBrainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     setLatencySamples (chain.getLatencySamples() + rack.latencySamples());
     resampleRatio = sampleRate / 16000.0;
     learnResampler.reset();
+
+    // Initialise parameter smoothers (15 ms ramp)
+    smoothed.prepareAll (sampleRate, 0.015);
+    smoothed.primeAll();
 }
 
 ChainParams VoxBrainProcessor::readChainParams() const
 {
-    auto v = [this] (const char* id) { return rawParam (id)->load (std::memory_order_relaxed); };
-    auto b = [&v]   (const char* id) { return v (id) > 0.5f; };
+    // Read smoothed parameter values (updated once per block in processBlock)
+    auto v = [this] (const juce::SmoothedValue<float>& sv) { return sv.getNextValue(); };
+    auto b = [&v]   (const juce::SmoothedValue<float>& sv) { return v (sv) > 0.5f; };
 
     ChainParams p;
-    p.inputGainDb  = v (inputGain);
-    p.outputGainDb = v (outputGain);
+    p.inputGainDb  = v (smoothed.inputGain);
+    p.outputGainDb = v (smoothed.outputGain);
 
     // Pitch: resolve "Auto" key/scale from the last LEARN pass
     {
         RetuneParams rp;
-        rp.on       = b (pitchOn);
-        rp.speedMs  = v (pitchSpeed);
-        rp.amount   = v (pitchAmount) * 0.01f;
+        rp.on       = b (smoothed.pitchOn);
+        rp.speedMs  = v (smoothed.pitchSpeed);
+        rp.amount   = v (smoothed.pitchAmount) * 0.01f;
 
-        const int keyChoice   = (int) v (pitchKey);     // 0=Auto, 1=C … 12=B
-        const int scaleChoice = (int) v (pitchScale);   // 0=Auto,1=Chrom,2=Maj,3=Min,…10=Blues
+        const int keyChoice   = (int) v (smoothed.pitchKey);     // 0=Auto, 1=C … 12=B
+        const int scaleChoice = (int) v (smoothed.pitchScale);   // 0=Auto,1=Chrom,2=Maj,3=Min,…10=Blues
 
         const int  root    = keyChoice == 0 ? autoKeyRoot.load() : keyChoice - 1;
         const bool major   = (scaleChoice == 2) ? true
@@ -154,48 +159,51 @@ ChainParams VoxBrainProcessor::readChainParams() const
         rp.chromatic  = scaleType == 0;
         rp.keyRoot    = haveKey ? root : -1;
         rp.majorScale = major;
-        rp.humanize   = v (pitchHumanize) * 0.01f;
-        rp.formant    = v (pitchFormant);
-        rp.transposeSemis = v (pitchTranspose);   // free interval, independent of correction
-        rp.latencyMode = (int) v (pitchLatency);   // 0=Live,1=Balanced,2=Studio
+        rp.humanize   = v (smoothed.pitchHumanize) * 0.01f;
+        rp.formant    = v (smoothed.pitchFormant);
+        rp.transposeSemis = v (smoothed.pitchTranspose);   // free interval, independent of correction
+        rp.latencyMode = (int) v (smoothed.pitchLatency);   // 0=Live,1=Balanced,2=Studio
 
         // ---- pro controls (see DSP/NoteIntelligence.h) ----
-        rp.flexTune            = v (pitchFlex)        * 0.01f;
-        rp.vibratoPreservation = v (pitchVibrato)     * 0.01f;
-        rp.transitionSmoothing = v (pitchTransition)  * 0.01f;
-        rp.driftCorrection     = v (pitchDrift)       * 0.01f;
-        rp.sensitivity         = v (pitchSensitivity) * 0.01f;
-        rp.hardTune            = v (pitchHardTune)    * 0.01f;
-        rp.snapThreshold       = v (pitchSnap);              // cents
-        rp.hqRender            = b (pitchHQ);
+        rp.flexTune            = v (smoothed.pitchFlex)        * 0.01f;
+        rp.vibratoPreservation = v (smoothed.pitchVibrato)     * 0.01f;
+        rp.transitionSmoothing = v (smoothed.pitchTransition)  * 0.01f;
+        rp.driftCorrection     = v (smoothed.pitchDrift)       * 0.01f;
+        rp.sensitivity         = v (smoothed.pitchSensitivity) * 0.01f;
+        rp.hardTune            = v (smoothed.pitchHardTune)    * 0.01f;
+        rp.snapThreshold       = v (smoothed.pitchSnap);              // cents
+        rp.hqRender            = b (smoothed.pitchHQ);
         p.retune = rp;
     }
 
-    p.gate  = { b (gateOn), v (gateThreshold) };
-    p.eq    = { b (eqOn), v (eqHpfFreq), v (eqLowShelfGain), v (eqMudGain), v (eqMudFreq),
-                v (eqPresenceGain), v (eqPresenceFreq), v (eqAirGain) };
-    p.dyneq = { b (dyneqOn), v (dyneqLowThresh), v (dyneqLowFreq), v (dyneqMidThresh),
-                v (dyneqMidFreq), v (dyneqHighThresh), v (dyneqHighFreq), v (dyneqRange) };
-    p.deess = { b (deessOn), v (deessThreshold), v (deessFreq) };
-    p.comp  = { b (compOn), v (compThreshold), v (compRatio), v (compAttack),
-                v (compRelease), v (compMakeup), v (compMix) * 0.01f };
-    p.mband = { b (mbandOn), v (mbandLowThresh), v (mbandMidThresh), v (mbandHighThresh),
-                v (mbandLowGain), v (mbandMidGain), v (mbandHighGain), v (mbandRatio),
-                v (mbandLowXover), v (mbandHighXover) };
-    p.sat   = { b (satOn), (int) v (satType), v (satDrive) * 0.01f, v (satTone) * 0.01f,
-                v (satBias) * 0.01f, v (satMix) * 0.01f, b (satHQ) };
-    p.delay = { b (delayOn), v (delayTime), v (delayFeedback) * 0.01f, v (delayMix) * 0.01f };
-    p.verb  = { b (verbOn), (int) v (verbType), v (verbSize) * 0.01f, v (verbDecay) * 0.01f,
-                v (verbPredelay), v (verbDamp) * 0.01f, v (verbDiffusion) * 0.01f,
-                v (verbLowCut), v (verbHighCut), v (verbModDepth) * 0.01f, v (verbWidth) * 0.01f,
-                v (verbMix) * 0.01f, v (verbDuck) * 0.01f, v (verbShimmer) * 0.01f, b (verbFreeze) };
-    p.limit = { b (limitOn), v (limitCeiling), v (limitGain) };
+    p.gate  = { b (smoothed.gateOn), v (smoothed.gateThreshold) };
+    p.eq    = { b (smoothed.eqOn), v (smoothed.eqHpfFreq), v (smoothed.eqLowShelfGain), v (smoothed.eqMudGain), v (smoothed.eqMudFreq),
+                v (smoothed.eqPresenceGain), v (smoothed.eqPresenceFreq), v (smoothed.eqAirGain) };
+    p.dyneq = { b (smoothed.dyneqOn), v (smoothed.dyneqLowThresh), v (smoothed.dyneqLowFreq), v (smoothed.dyneqMidThresh),
+                v (smoothed.dyneqMidFreq), v (smoothed.dyneqHighThresh), v (smoothed.dyneqHighFreq), v (smoothed.dyneqRange) };
+    p.deess = { b (smoothed.deessOn), v (smoothed.deessThreshold), v (smoothed.deessFreq) };
+    p.comp  = { b (smoothed.compOn), v (smoothed.compThreshold), v (smoothed.compRatio), v (smoothed.compAttack),
+                v (smoothed.compRelease), v (smoothed.compMakeup), v (smoothed.compMix) * 0.01f };
+    p.mband = { b (smoothed.mbandOn), v (smoothed.mbandLowThresh), v (smoothed.mbandMidThresh), v (smoothed.mbandHighThresh),
+                v (smoothed.mbandLowGain), v (smoothed.mbandMidGain), v (smoothed.mbandHighGain), v (smoothed.mbandRatio),
+                v (smoothed.mbandLowXover), v (smoothed.mbandHighXover) };
+    p.sat   = { b (smoothed.satOn), (int) v (smoothed.satType), v (smoothed.satDrive) * 0.01f, v (smoothed.satTone) * 0.01f,
+                v (smoothed.satBias) * 0.01f, v (smoothed.satMix) * 0.01f, b (smoothed.satHQ) };
+    p.delay = { b (smoothed.delayOn), v (smoothed.delayTime), v (smoothed.delayFeedback) * 0.01f, v (smoothed.delayMix) * 0.01f };
+    p.verb  = { b (smoothed.verbOn), (int) v (smoothed.verbType), v (smoothed.verbSize) * 0.01f, v (smoothed.verbDecay) * 0.01f,
+                v (smoothed.verbPredelay), v (smoothed.verbDamp) * 0.01f, v (smoothed.verbDiffusion) * 0.01f,
+                v (smoothed.verbLowCut), v (smoothed.verbHighCut), v (smoothed.verbModDepth) * 0.01f, v (smoothed.verbWidth) * 0.01f,
+                v (smoothed.verbMix) * 0.01f, v (smoothed.verbDuck) * 0.01f, v (smoothed.verbShimmer) * 0.01f, b (smoothed.verbFreeze) };
+    p.limit = { b (smoothed.limitOn), v (smoothed.limitCeiling), v (smoothed.limitGain) };
     return p;
 }
 
 void VoxBrainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // Update all parameter smoothers from APVTS (lock-free reads)
+    smoothed.updateAll (raw);
 
     for (int c = getTotalNumInputChannels(); c < getTotalNumOutputChannels(); ++c)
         buffer.clear (c, 0, buffer.getNumSamples());
@@ -911,8 +919,37 @@ void VoxBrainProcessor::setStateInformation (const void* data, int sizeInBytes)
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
         }
 }
+}
 
-juce::AudioProcessorEditor* VoxBrainProcessor::createEditor()
+// ============================================================================
+//  SmoothedParams implementation
+// ============================================================================
+void VoxBrainProcessor::SmoothedParams::prepareAll (double sampleRate, double rampSeconds)
+{
+    auto prep = [&](auto& sv) { sv.reset (sampleRate, rampSeconds); };
+    prep (inputGain); prep (outputGain);
+    prep (pitchOn); prep (pitchKey); prep (pitchScale); prep (pitchSpeed); prep (pitchAmount);
+    prep (pitchHumanize); prep (pitchFormant); prep (pitchLatency);
+    prep (pitchFlex); prep (pitchVibrato); prep (pitchTransition); prep (pitchDrift);
+    prep (pitchSensitivity); prep (pitchHardTune); prep (pitchSnap); prep (pitchHQ);
+    prep (pitchTranspose); prep (voiceCharacter);
+    prep (gateOn); prep (gateThreshold);
+    prep (eqOn); prep (eqHpfFreq); prep (eqLowShelfGain); prep (eqMudGain); prep (eqMudFreq);
+    prep (eqPresenceGain); prep (eqPresenceFreq); prep (eqAirGain);
+    prep (dyneqOn); prep (dyneqLowThresh); prep (dyneqLowFreq); prep (dyneqMidThresh);
+    prep (dyneqMidFreq); prep (dyneqHighThresh); prep (dyneqHighFreq); prep (dyneqRange);
+    prep (deessOn); prep (deessThreshold); prep (deessFreq);
+    prep (compOn); prep (compThreshold); prep (compRatio); prep (compAttack);
+    prep (compRelease); prep (compMakeup); prep (compMix);
+    prep (mbandOn); prep (mbandLowThresh); prep (mbandMidThresh); prep (mbandHighThresh);
+    prep (mbandLowGain); prep (mbandMidGain); prep (mbandHighGain); prep (mbandRatio);
+    prep (mbandLowXover); prep (mbandHighXover);
+    prep (satOn); prep (satType); prep (satDrive); prep (satTone); prep (satBias); prep (satMix); prep (satHQ);
+    prep (delayOn); prep (delayTime); prep (delayFeedback); prep (delayMix);
+    prep (verbOn); prep (verbType); prep (verbSize); prep (verbDecay); prep (verbPredelay);
+    prep (verbDamp); prep (verbDiffusion); prep (verbLowCut); prep (verbHighCut);
+    prep (verbModDepth); prep (verbWidth); prep (verbMix); prep (verbDuck); prep (verbShimmer); prep (verbFreeze);
+    
 {
     return new VoxBrainEditor (*this);
 }
@@ -923,3 +960,4 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new vf::VoxBrainProcessor();
 }
+

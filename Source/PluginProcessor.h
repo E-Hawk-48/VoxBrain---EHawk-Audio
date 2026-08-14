@@ -243,6 +243,52 @@ private:
     std::unordered_map<juce::String, std::atomic<float>*> raw;
     std::atomic<float>* rawParam (const char* id) const;
 
+    // ---- Parameter smoothing -------------------------------------------------
+    struct SmoothedParams
+    {
+        // Global
+        juce::SmoothedValue<float> inputGain, outputGain;
+        // Pitch
+        juce::SmoothedValue<float> pitchOn, pitchKey, pitchScale, pitchSpeed, pitchAmount,
+            pitchHumanize, pitchFormant, pitchLatency,
+            pitchFlex, pitchVibrato, pitchTransition, pitchDrift,
+            pitchSensitivity, pitchHardTune, pitchSnap, pitchHQ,
+            pitchTranspose, voiceCharacter;
+        // Gate
+        juce::SmoothedValue<float> gateOn, gateThreshold;
+        // EQ
+        juce::SmoothedValue<float> eqOn, eqHpfFreq, eqLowShelfGain, eqMudGain, eqMudFreq,
+            eqPresenceGain, eqPresenceFreq, eqAirGain;
+        // Dynamic EQ
+        juce::SmoothedValue<float> dyneqOn, dyneqLowThresh, dyneqLowFreq, dyneqMidThresh,
+            dyneqMidFreq, dyneqHighThresh, dyneqHighFreq, dyneqRange;
+        // De-Esser
+        juce::SmoothedValue<float> deessOn, deessThreshold, deessFreq;
+        // Compressor
+        juce::SmoothedValue<float> compOn, compThreshold, compRatio, compAttack,
+            compRelease, compMakeup, compMix;
+        // Multiband
+        juce::SmoothedValue<float> mbandOn, mbandLowThresh, mbandMidThresh, mbandHighThresh,
+            mbandLowGain, mbandMidGain, mbandHighGain, mbandRatio,
+            mbandLowXover, mbandHighXover;
+        // Saturation
+        juce::SmoothedValue<float> satOn, satType, satDrive, satTone, satBias, satMix, satHQ;
+        // Delay
+        juce::SmoothedValue<float> delayOn, delayTime, delayFeedback, delayMix;
+        // Reverb
+        juce::SmoothedValue<float> verbOn, verbType, verbSize, verbDecay, verbPredelay,
+            verbDamp, verbDiffusion, verbLowCut, verbHighCut,
+            verbModDepth, verbWidth, verbMix, verbDuck, verbShimmer, verbFreeze;
+        // Limiter
+        juce::SmoothedValue<float> limitOn, limitCeiling, limitGain;
+
+        void prepareAll (double sampleRate, double rampSeconds = 0.015);
+        void updateAll (const std::unordered_map<juce::String, std::atomic<float>*>& raw);
+        void primeAll();
+    };
+
+    SmoothedParams smoothed;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VoxBrainProcessor)
 };
 } // namespace vf
