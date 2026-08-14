@@ -57,13 +57,15 @@ void PitchDisplay::paint (juce::Graphics& g)
         const float y = hzToY (440.0f * std::pow (2.0f, (m - 69) / 12.0f), graph);
         const int pc = ((m % 12) + 12) % 12;
         const bool isC = pc == 0;
+        const int yInt = (int) std::round (y);
         g.setColour (theme::outline.withAlpha (isC ? 0.9f : 0.28f));
-        g.drawHorizontalLine ((int) y, graph.getX(), graph.getRight());
+        g.drawHorizontalLine (yInt, (int) std::round (graph.getX()), (int) std::round (graph.getRight()));
         if (isC)
         {
             g.setColour (theme::textDim);
             g.setFont (juce::FontOptions (9.0f));
-            g.drawText (juce::String (names[pc]) + juce::String (m / 12 - 1),
+            const int octave = m / 12 - 1;
+            g.drawText (juce::String (names[pc]) + juce::String (octave),
                         graph.getX() + 2.0f, y - 10.0f, 26.0f, 10.0f,
                         juce::Justification::topLeft);
         }

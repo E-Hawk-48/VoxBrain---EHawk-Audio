@@ -120,14 +120,63 @@ void VoxBrainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     // Initialise parameter smoothers (15 ms ramp)
     smoothed.prepareAll (sampleRate, 0.015);
-    smoothed.primeAll();
+    // Prime smoothers from current parameter values so they don't ramp on startup
+    {
+        auto get = [&](const char* id) -> float {
+            if (auto p = apvts.getRawParameterValue (id))
+                return p->load();
+            return 0.0f;
+        };
+        using namespace vf::param;
+        smoothed.inputGain.setCurrentAndTargetValue  (get (vf::param::inputGain));
+        smoothed.outputGain.setCurrentAndTargetValue (get (vf::param::outputGain));
+
+        smoothed.pitchOn.setCurrentAndTargetValue (get (vf::param::pitchOn)); smoothed.pitchKey.setCurrentAndTargetValue (get (vf::param::pitchKey));
+        smoothed.pitchScale.setCurrentAndTargetValue (get (vf::param::pitchScale)); smoothed.pitchSpeed.setCurrentAndTargetValue (get (vf::param::pitchSpeed)); smoothed.pitchAmount.setCurrentAndTargetValue (get (vf::param::pitchAmount));
+        smoothed.pitchHumanize.setCurrentAndTargetValue (get (vf::param::pitchHumanize)); smoothed.pitchFormant.setCurrentAndTargetValue (get (vf::param::pitchFormant)); smoothed.pitchLatency.setCurrentAndTargetValue (get (vf::param::pitchLatency));
+        smoothed.pitchFlex.setCurrentAndTargetValue (get (vf::param::pitchFlex)); smoothed.pitchVibrato.setCurrentAndTargetValue (get (vf::param::pitchVibrato)); smoothed.pitchTransition.setCurrentAndTargetValue (get (vf::param::pitchTransition)); smoothed.pitchDrift.setCurrentAndTargetValue (get (vf::param::pitchDrift));
+        smoothed.pitchSensitivity.setCurrentAndTargetValue (get (vf::param::pitchSensitivity)); smoothed.pitchHardTune.setCurrentAndTargetValue (get (vf::param::pitchHardTune)); smoothed.pitchSnap.setCurrentAndTargetValue (get (vf::param::pitchSnap)); smoothed.pitchHQ.setCurrentAndTargetValue (get (vf::param::pitchHQ));
+        smoothed.pitchTranspose.setCurrentAndTargetValue (get (vf::param::pitchTranspose)); smoothed.voiceCharacter.setCurrentAndTargetValue (get (vf::param::voiceCharacter));
+
+        smoothed.gateOn.setCurrentAndTargetValue (get (vf::param::gateOn)); smoothed.gateThreshold.setCurrentAndTargetValue (get (vf::param::gateThreshold));
+
+        smoothed.eqOn.setCurrentAndTargetValue (get (vf::param::eqOn)); smoothed.eqHpfFreq.setCurrentAndTargetValue (get (vf::param::eqHpfFreq)); smoothed.eqLowShelfGain.setCurrentAndTargetValue (get (vf::param::eqLowShelfGain));
+        smoothed.eqMudGain.setCurrentAndTargetValue (get (vf::param::eqMudGain)); smoothed.eqMudFreq.setCurrentAndTargetValue (get (vf::param::eqMudFreq)); smoothed.eqPresenceGain.setCurrentAndTargetValue (get (vf::param::eqPresenceGain));
+        smoothed.eqPresenceFreq.setCurrentAndTargetValue (get (vf::param::eqPresenceFreq)); smoothed.eqAirGain.setCurrentAndTargetValue (get (vf::param::eqAirGain));
+
+        smoothed.dyneqOn.setCurrentAndTargetValue (get (vf::param::dyneqOn)); smoothed.dyneqLowThresh.setCurrentAndTargetValue (get (vf::param::dyneqLowThresh)); smoothed.dyneqLowFreq.setCurrentAndTargetValue (get (vf::param::dyneqLowFreq));
+        smoothed.dyneqMidThresh.setCurrentAndTargetValue (get (vf::param::dyneqMidThresh)); smoothed.dyneqMidFreq.setCurrentAndTargetValue (get (vf::param::dyneqMidFreq)); smoothed.dyneqHighThresh.setCurrentAndTargetValue (get (vf::param::dyneqHighThresh));
+        smoothed.dyneqHighFreq.setCurrentAndTargetValue (get (vf::param::dyneqHighFreq)); smoothed.dyneqRange.setCurrentAndTargetValue (get (vf::param::dyneqRange));
+
+        smoothed.deessOn.setCurrentAndTargetValue (get (vf::param::deessOn)); smoothed.deessThreshold.setCurrentAndTargetValue (get (vf::param::deessThreshold)); smoothed.deessFreq.setCurrentAndTargetValue (get (vf::param::deessFreq));
+
+        smoothed.compOn.setCurrentAndTargetValue (get (vf::param::compOn)); smoothed.compThreshold.setCurrentAndTargetValue (get (vf::param::compThreshold)); smoothed.compRatio.setCurrentAndTargetValue (get (vf::param::compRatio));
+        smoothed.compAttack.setCurrentAndTargetValue (get (vf::param::compAttack)); smoothed.compRelease.setCurrentAndTargetValue (get (vf::param::compRelease)); smoothed.compMakeup.setCurrentAndTargetValue (get (compMakeup)); smoothed.compMix.setCurrentAndTargetValue (get (compMix));
+
+        smoothed.mbandOn.setCurrentAndTargetValue (get (mbandOn)); smoothed.mbandLowThresh.setCurrentAndTargetValue (get (mbandLowThresh)); smoothed.mbandMidThresh.setCurrentAndTargetValue (get (mbandMidThresh));
+        smoothed.mbandHighThresh.setCurrentAndTargetValue (get (mbandHighThresh)); smoothed.mbandLowGain.setCurrentAndTargetValue (get (mbandLowGain)); smoothed.mbandMidGain.setCurrentAndTargetValue (get (mbandMidGain));
+        smoothed.mbandHighGain.setCurrentAndTargetValue (get (mbandHighGain)); smoothed.mbandRatio.setCurrentAndTargetValue (get (mbandRatio)); smoothed.mbandLowXover.setCurrentAndTargetValue (get (mbandLowXover)); smoothed.mbandHighXover.setCurrentAndTargetValue (get (mbandHighXover));
+
+        smoothed.satOn.setCurrentAndTargetValue (get (vf::param::satOn)); smoothed.satType.setCurrentAndTargetValue (get (vf::param::satType)); smoothed.satDrive.setCurrentAndTargetValue (get (satDrive));
+        smoothed.satTone.setCurrentAndTargetValue (get (satTone)); smoothed.satBias.setCurrentAndTargetValue (get (satBias)); smoothed.satMix.setCurrentAndTargetValue (get (satMix)); smoothed.satHQ.setCurrentAndTargetValue (get (satHQ));
+
+        smoothed.delayOn.setCurrentAndTargetValue (get (delayOn)); smoothed.delayTime.setCurrentAndTargetValue (get (delayTime)); smoothed.delayFeedback.setCurrentAndTargetValue (get (delayFeedback)); smoothed.delayMix.setCurrentAndTargetValue (get (delayMix));
+
+        smoothed.verbOn.setCurrentAndTargetValue (get (vf::param::verbOn)); smoothed.verbType.setCurrentAndTargetValue (get (verbType)); smoothed.verbSize.setCurrentAndTargetValue (get (verbSize));
+        smoothed.verbDecay.setCurrentAndTargetValue (get (vf::param::verbDecay)); smoothed.verbPredelay.setCurrentAndTargetValue (get (vf::param::verbPredelay)); smoothed.verbDamp.setCurrentAndTargetValue (get (verbDamp));
+        smoothed.verbDiffusion.setCurrentAndTargetValue (get (verbDiffusion)); smoothed.verbLowCut.setCurrentAndTargetValue (get (verbLowCut)); smoothed.verbHighCut.setCurrentAndTargetValue (get (verbHighCut));
+        smoothed.verbModDepth.setCurrentAndTargetValue (get (verbModDepth)); smoothed.verbWidth.setCurrentAndTargetValue (get (verbWidth)); smoothed.verbMix.setCurrentAndTargetValue (get (vf::param::verbMix));
+        smoothed.verbDuck.setCurrentAndTargetValue (get (verbDuck)); smoothed.verbShimmer.setCurrentAndTargetValue (get (verbShimmer)); smoothed.verbFreeze.setCurrentAndTargetValue (get (verbFreeze));
+
+        smoothed.limitOn.setCurrentAndTargetValue (get (limitOn)); smoothed.limitCeiling.setCurrentAndTargetValue (get (limitCeiling)); smoothed.limitGain.setCurrentAndTargetValue (get (limitGain));
+    }
 }
 
-ChainParams VoxBrainProcessor::readChainParams() const
+ChainParams VoxBrainProcessor::readChainParams()
 {
     // Read smoothed parameter values (updated once per block in processBlock)
-    auto v = [this] (const juce::SmoothedValue<float>& sv) { return sv.getNextValue(); };
-    auto b = [&v]   (const juce::SmoothedValue<float>& sv) { return v (sv) > 0.5f; };
+    auto v = [this] (juce::SmoothedValue<float>& sv) { return sv.getNextValue(); };
+    auto b = [&v]   (juce::SmoothedValue<float>& sv) { return v (sv) > 0.5f; };
 
     ChainParams p;
     p.inputGainDb  = v (smoothed.inputGain);
@@ -919,7 +968,6 @@ void VoxBrainProcessor::setStateInformation (const void* data, int sizeInBytes)
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
         }
 }
-}
 
 // ============================================================================
 //  SmoothedParams implementation
@@ -950,9 +998,69 @@ void VoxBrainProcessor::SmoothedParams::prepareAll (double sampleRate, double ra
     prep (verbDamp); prep (verbDiffusion); prep (verbLowCut); prep (verbHighCut);
     prep (verbModDepth); prep (verbWidth); prep (verbMix); prep (verbDuck); prep (verbShimmer); prep (verbFreeze);
     
+}
+
+void VoxBrainProcessor::SmoothedParams::updateAll (const std::unordered_map<juce::String, std::atomic<float>*>& raw)
+{
+    auto get = [&](const char* id) -> float {
+        auto it = raw.find (juce::String (id));
+        if (it != raw.end() && it->second)
+            return it->second->load();
+        return 0.0f;
+    };
+
+    using namespace vf::param; // refer to ParameterIDs by qualified names
+
+    inputGain.setTargetValue  (get (vf::param::inputGain));
+    outputGain.setTargetValue (get (vf::param::outputGain));
+
+    pitchOn.setTargetValue (get (vf::param::pitchOn)); pitchKey.setTargetValue (get (vf::param::pitchKey));
+    pitchScale.setTargetValue (get (vf::param::pitchScale)); pitchSpeed.setTargetValue (get (vf::param::pitchSpeed)); pitchAmount.setTargetValue (get (vf::param::pitchAmount));
+    pitchHumanize.setTargetValue (get (vf::param::pitchHumanize)); pitchFormant.setTargetValue (get (vf::param::pitchFormant)); pitchLatency.setTargetValue (get (vf::param::pitchLatency));
+    pitchFlex.setTargetValue (get (vf::param::pitchFlex)); pitchVibrato.setTargetValue (get (vf::param::pitchVibrato)); pitchTransition.setTargetValue (get (vf::param::pitchTransition)); pitchDrift.setTargetValue (get (vf::param::pitchDrift));
+    pitchSensitivity.setTargetValue (get (vf::param::pitchSensitivity)); pitchHardTune.setTargetValue (get (vf::param::pitchHardTune)); pitchSnap.setTargetValue (get (vf::param::pitchSnap)); pitchHQ.setTargetValue (get (vf::param::pitchHQ));
+    pitchTranspose.setTargetValue (get (vf::param::pitchTranspose)); voiceCharacter.setTargetValue (get (vf::param::voiceCharacter));
+
+    gateOn.setTargetValue (get (vf::param::gateOn)); gateThreshold.setTargetValue (get (vf::param::gateThreshold));
+
+    eqOn.setTargetValue (get (vf::param::eqOn)); eqHpfFreq.setTargetValue (get (vf::param::eqHpfFreq)); eqLowShelfGain.setTargetValue (get (vf::param::eqLowShelfGain));
+        eqMudGain.setTargetValue (get (vf::param::eqMudGain)); eqMudFreq.setTargetValue (get (vf::param::eqMudFreq)); eqPresenceGain.setTargetValue (get (vf::param::eqPresenceGain));
+        eqPresenceFreq.setTargetValue (get (vf::param::eqPresenceFreq)); eqAirGain.setTargetValue (get (vf::param::eqAirGain));
+
+    dyneqOn.setTargetValue (get (vf::param::dyneqOn)); dyneqLowThresh.setTargetValue (get (vf::param::dyneqLowThresh)); dyneqLowFreq.setTargetValue (get (vf::param::dyneqLowFreq));
+        dyneqMidThresh.setTargetValue (get (vf::param::dyneqMidThresh)); dyneqMidFreq.setTargetValue (get (vf::param::dyneqMidFreq)); dyneqHighThresh.setTargetValue (get (vf::param::dyneqHighThresh));
+        dyneqHighFreq.setTargetValue (get (vf::param::dyneqHighFreq)); dyneqRange.setTargetValue (get (vf::param::dyneqRange));
+
+    deessOn.setTargetValue (get (vf::param::deessOn)); deessThreshold.setTargetValue (get (vf::param::deessThreshold)); deessFreq.setTargetValue (get (vf::param::deessFreq));
+
+    compOn.setTargetValue (get (vf::param::compOn)); compThreshold.setTargetValue (get (vf::param::compThreshold)); compRatio.setTargetValue (get (vf::param::compRatio));
+        compAttack.setTargetValue (get (vf::param::compAttack)); compRelease.setTargetValue (get (vf::param::compRelease)); compMakeup.setTargetValue (get (vf::param::compMakeup)); compMix.setTargetValue (get (vf::param::compMix));
+
+    mbandOn.setTargetValue (get (vf::param::mbandOn)); mbandLowThresh.setTargetValue (get (vf::param::mbandLowThresh)); mbandMidThresh.setTargetValue (get (vf::param::mbandMidThresh));
+        mbandHighThresh.setTargetValue (get (vf::param::mbandHighThresh)); mbandLowGain.setTargetValue (get (vf::param::mbandLowGain)); mbandMidGain.setTargetValue (get (vf::param::mbandMidGain));
+        mbandHighGain.setTargetValue (get (vf::param::mbandHighGain)); mbandRatio.setTargetValue (get (vf::param::mbandRatio)); mbandLowXover.setTargetValue (get (vf::param::mbandLowXover)); mbandHighXover.setTargetValue (get (vf::param::mbandHighXover));
+
+    satOn.setTargetValue (get (vf::param::satOn)); satType.setTargetValue (get (vf::param::satType)); satDrive.setTargetValue (get (vf::param::satDrive));
+        satTone.setTargetValue (get (vf::param::satTone)); satBias.setTargetValue (get (vf::param::satBias)); satMix.setTargetValue (get (vf::param::satMix)); satHQ.setTargetValue (get (vf::param::satHQ));
+
+    delayOn.setTargetValue (get (vf::param::delayOn)); delayTime.setTargetValue (get (vf::param::delayTime)); delayFeedback.setTargetValue (get (vf::param::delayFeedback)); delayMix.setTargetValue (get (vf::param::delayMix));
+
+    verbOn.setTargetValue (get (vf::param::verbOn)); verbType.setTargetValue (get (vf::param::verbType)); verbSize.setTargetValue (get (vf::param::verbSize));
+        verbDecay.setTargetValue (get (vf::param::verbDecay)); verbPredelay.setTargetValue (get (vf::param::verbPredelay)); verbDamp.setTargetValue (get (vf::param::verbDamp));
+        verbDiffusion.setTargetValue (get (vf::param::verbDiffusion)); verbLowCut.setTargetValue (get (vf::param::verbLowCut)); verbHighCut.setTargetValue (get (vf::param::verbHighCut));
+        verbModDepth.setTargetValue (get (vf::param::verbModDepth)); verbWidth.setTargetValue (get (vf::param::verbWidth)); verbMix.setTargetValue (get (vf::param::verbMix));
+        verbDuck.setTargetValue (get (vf::param::verbDuck)); verbShimmer.setTargetValue (get (vf::param::verbShimmer)); verbFreeze.setTargetValue (get (vf::param::verbFreeze));
+
+    limitOn.setTargetValue (get (vf::param::limitOn)); limitCeiling.setTargetValue (get (vf::param::limitCeiling)); limitGain.setTargetValue (get (vf::param::limitGain));
+}
+
+void VoxBrainProcessor::SmoothedParams::primeAll() {}
+
+juce::AudioProcessorEditor* VoxBrainProcessor::createEditor()
 {
     return new VoxBrainEditor (*this);
 }
+
 } // namespace vf
 
 // ============================================================================

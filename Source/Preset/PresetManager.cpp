@@ -187,42 +187,47 @@ bool PresetManager::loadUserPreset (const juce::String& stem)
 const std::vector<PresetManager::Factory>& PresetManager::factories() const
 {
     static const std::vector<Factory> f = {
-        { "Pop Sheen",
-          { { eqOn, 1 }, { eqPresenceGain, 2.5f }, { eqAirGain, 3.0f },
-            { deessOn, 1 }, { deessThreshold, -32.0f },
-            { compOn, 1 }, { compThreshold, -20.0f }, { compRatio, 3.0f }, { compMakeup, 3.0f },
-            { satOn, 1 }, { satMix, 20.0f },
-            { verbOn, 1 }, { verbSize, 40.0f }, { verbMix, 12.0f },
-            { limitOn, 1 }, { limitGain, 3.0f } } },
+        Factory { "Pop Sheen", {
+            { eqOn, 1.0f }, { eqPresenceGain, 2.5f }, { eqAirGain, 3.0f },
+            { deessOn, 1.0f }, { deessThreshold, -32.0f },
+            { compOn, 1.0f }, { compThreshold, -20.0f }, { compRatio, 3.0f }, { compMakeup, 3.0f },
+            { satOn, 1.0f }, { satMix, 20.0f },
+            { verbOn, 1.0f }, { verbSize, 40.0f }, { verbMix, 12.0f },
+            { limitOn, 1.0f }, { limitGain, 3.0f }
+        } },
 
-        { "Warm Intimate",
-          { { eqOn, 1 }, { eqLowShelfGain, 2.0f }, { eqMudGain, -2.0f }, { eqAirGain, 0.5f },
-            { compOn, 1 }, { compThreshold, -22.0f }, { compRatio, 2.5f }, { compMix, 100.0f },
-            { satOn, 1 }, { satDrive, 30.0f }, { satMix, 30.0f },
-            { verbOn, 1 }, { verbSize, 30.0f }, { verbDamp, 60.0f }, { verbMix, 10.0f } } },
+        Factory { "Warm Intimate", {
+            { eqOn, 1.0f }, { eqLowShelfGain, 2.0f }, { eqMudGain, -2.0f }, { eqAirGain, 0.5f },
+            { compOn, 1.0f }, { compThreshold, -22.0f }, { compRatio, 2.5f }, { compMix, 100.0f },
+            { satOn, 1.0f }, { satDrive, 30.0f }, { satMix, 30.0f },
+            { verbOn, 1.0f }, { verbSize, 30.0f }, { verbDamp, 60.0f }, { verbMix, 10.0f }
+        } },
 
-        { "Rap Upfront",
-          { { eqOn, 1 }, { eqHpfFreq, 100.0f }, { eqPresenceGain, 2.0f },
-            { compOn, 1 }, { compThreshold, -18.0f }, { compRatio, 4.0f }, { compAttack, 3.0f },
-            { satOn, 1 }, { satMix, 25.0f },
-            { delayOn, 1 }, { delayTime, 120.0f }, { delayMix, 8.0f },
-            { verbOn, 1 }, { verbSize, 30.0f }, { verbMix, 8.0f },
-            { limitOn, 1 }, { limitGain, 4.0f } } },
+        Factory { "Rap Upfront", {
+            { eqOn, 1.0f }, { eqHpfFreq, 100.0f }, { eqPresenceGain, 2.0f },
+            { compOn, 1.0f }, { compThreshold, -18.0f }, { compRatio, 4.0f }, { compAttack, 3.0f },
+            { satOn, 1.0f }, { satMix, 25.0f },
+            { delayOn, 1.0f }, { delayTime, 120.0f }, { delayMix, 8.0f },
+            { verbOn, 1.0f }, { verbSize, 30.0f }, { verbMix, 8.0f },
+            { limitOn, 1.0f }, { limitGain, 4.0f }
+        } },
 
-        { "Vintage Tape",
-          { { eqOn, 1 }, { eqHpfFreq, 60.0f }, { eqAirGain, -2.0f },
-            { satOn, 1 }, { satDrive, 45.0f }, { satMix, 40.0f },
-            { verbOn, 1 }, { verbDamp, 65.0f }, { verbMix, 12.0f },
-            { limitOn, 1 }, { limitGain, 2.0f } } },
+        Factory { "Vintage Tape", {
+            { eqOn, 1.0f }, { eqHpfFreq, 60.0f }, { eqAirGain, -2.0f },
+            { satOn, 1.0f }, { satDrive, 45.0f }, { satMix, 40.0f },
+            { verbOn, 1.0f }, { verbDamp, 65.0f }, { verbMix, 12.0f },
+            { limitOn, 1.0f }, { limitGain, 2.0f }
+        } },
 
-        { "Podcast Clean",
-          { { pitchOn, 0 },
-            { gateOn, 1 }, { gateThreshold, -55.0f },
-            { eqOn, 1 }, { eqHpfFreq, 90.0f },
-            { deessOn, 1 }, { deessThreshold, -30.0f },
-            { compOn, 1 }, { compThreshold, -20.0f }, { compRatio, 3.0f }, { compMakeup, 3.0f },
-            { satOn, 0 }, { delayOn, 0 }, { verbOn, 0 },
-            { limitOn, 1 }, { limitGain, 3.0f } } },
+        Factory { "Podcast Clean", {
+            { pitchOn, 0.0f },
+            { gateOn, 1.0f }, { gateThreshold, -55.0f },
+            { eqOn, 1.0f }, { eqHpfFreq, 90.0f },
+            { deessOn, 1.0f }, { deessThreshold, -30.0f },
+            { compOn, 1.0f }, { compThreshold, -20.0f }, { compRatio, 3.0f }, { compMakeup, 3.0f },
+            { satOn, 0.0f }, { delayOn, 0.0f }, { verbOn, 0.0f },
+            { limitOn, 1.0f }, { limitGain, 3.0f }
+        } }
     };
     return f;
 }

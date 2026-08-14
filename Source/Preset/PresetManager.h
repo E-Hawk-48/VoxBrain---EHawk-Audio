@@ -59,7 +59,16 @@ public:
     std::function<void()> onStateChanged;             // UI refresh hook
 
 private:
-    struct Factory { juce::String name; std::vector<std::pair<juce::String, float>> overrides; };
+    struct Factory
+    {
+        juce::String name;
+        std::vector<std::pair<juce::String, float>> overrides;
+
+        Factory (juce::String n, std::initializer_list<std::pair<juce::String, float>> o)
+            : name (std::move (n)), overrides (o)
+        {
+        }
+    };
     const std::vector<Factory>& factories() const;
 
     Snapshot defaults() const;

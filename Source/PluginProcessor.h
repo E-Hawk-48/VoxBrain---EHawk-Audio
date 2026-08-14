@@ -154,7 +154,7 @@ public:
 
 private:
     void timerCallback() override;
-    ChainParams readChainParams() const;
+    ChainParams readChainParams();
     void applyBrainResult (const AutoMixBrain::Result& r);
     bool isModuleLocked (const juce::String& paramId) const;
 
