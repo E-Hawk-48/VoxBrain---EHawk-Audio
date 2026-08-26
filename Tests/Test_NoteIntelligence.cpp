@@ -45,6 +45,24 @@ float meanCorrection (const std::vector<vf::NoteDecision>& d, double from = 0.4)
     return n > 0 ? (float) (s / (double) n) : 0.0f;
 }
 
+float meanKeep (const std::vector<vf::NoteDecision>& d, double from = 0.4)
+{
+    const size_t a = (size_t) ((double) d.size() * from);
+    double s = 0.0; size_t n = 0;
+    for (size_t i = a; i < d.size(); ++i) { s += d[i].expressionKeep; ++n; }
+    return n > 0 ? (float) (s / (double) n) : 0.0f;
+}
+
+/** Mean centre-pull over ONLY the frames in a given state. The overall mean is
+    the wrong measure for a gesture that occupies part of a trace: it is diluted
+    by the sustain either side of it. */
+float meanCorrectionInState (const std::vector<vf::NoteDecision>& d, vf::NoteDecision::State st)
+{
+    double s = 0.0; size_t n = 0;
+    for (const auto& x : d) if (x.state == st) { s += x.correctionScale; ++n; }
+    return n > 0 ? (float) (s / (double) n) : -1.0f;
+}
+
 std::vector<float> vibratoTrace (float baseHz, double seconds, double rateHz, double depthCents)
 {
     std::vector<float> v ((size_t) (seconds * FPS));
@@ -80,8 +98,18 @@ void runNoteIntelligenceTests()
 
         s.check ("vibrato rate estimated near 5.5 Hz", std::abs (rate - 5.5f) < 1.5f,
                  juce::String (rate, 2) + " Hz");
-        s.check ("vibrato correction is eased, not flattened", meanCorrection (d) < 0.35f,
-                 juce::String (meanCorrection (d), 2) + " mean correction");
+        // THE CONTRACT THAT CHANGED. Preservation used to be spent throttling the
+        // centre pull, which meant an expressive singer was never actually tuned
+        // (measured end-to-end: 35 cents flat in, 35 cents flat out). Vibrato is
+        // now preserved on its own axis, so BOTH of these must hold at once:
+        // the note is moved bodily onto pitch, and the swing survives intact.
+        s.check ("a vibrato note still gets its centre corrected in full",
+                 meanCorrection (d) > 0.9f,
+                 juce::String (meanCorrection (d), 2) + " mean centre pull");
+        s.check ("vibrato swing is preserved, not flattened",
+                 std::abs (meanKeep (d) - def.vibratoPreservation) < 0.1f,
+                 juce::String (meanKeep (d), 2) + " kept vs setting "
+                 + juce::String (def.vibratoPreservation, 2));
 
         float lo = 1.0e9f, hi = 0.0f;
         for (size_t i = d.size() / 2; i < d.size(); ++i)
@@ -99,10 +127,14 @@ void runNoteIntelligenceTests()
         const auto v = vibratoTrace (220.0f, 1.6, 5.5, 45.0);
         auto off = def; off.vibratoPreservation = 0.0f;
         auto on  = def; on.vibratoPreservation  = 1.0f;
-        s.check ("preservation = 0 corrects vibrato hard", meanCorrection (run (v, off)) > 0.8f,
-                 juce::String (meanCorrection (run (v, off)), 2));
-        s.check ("preservation = 1 leaves vibrato alone", meanCorrection (run (v, on)) < 0.15f,
-                 juce::String (meanCorrection (run (v, on)), 2));
+        s.check ("preservation = 0 flattens the vibrato onto the note",
+                 meanKeep (run (v, off)) < 0.15f, juce::String (meanKeep (run (v, off)), 2));
+        s.check ("preservation = 1 leaves the vibrato swing alone",
+                 meanKeep (run (v, on)) > 0.85f, juce::String (meanKeep (run (v, on)), 2));
+        // ...and neither setting is allowed to stop the note being tuned.
+        s.check ("preservation never cancels the centre correction",
+                 meanCorrection (run (v, off)) > 0.9f && meanCorrection (run (v, on)) > 0.9f,
+                 juce::String (meanCorrection (run (v, on)), 2) + " centre pull at full preservation");
     }
 
     // ---- slide vs off-pitch (the historically wrong one) ---------------
@@ -118,8 +150,15 @@ void runNoteIntelligenceTests()
         const float trans = fracState (d, vf::NoteDecision::State::Transition, 0.15);
         s.check ("a slide is classified as a transition, not off-pitch", trans > 0.15f,
                  juce::String (trans * 100.0f, 0) + "% transition frames");
-        s.check ("correction eases during the slide", meanCorrection (d, 0.15) < 0.75f,
-                 juce::String (meanCorrection (d, 0.15), 2));
+        // Measured over the transition frames themselves: the overall mean is
+        // diluted by the settled frames either side, which is why it barely
+        // moved even when the easing was working.
+        s.check ("the centre pull eases on the frames that ARE the slide",
+                 meanCorrectionInState (d, vf::NoteDecision::State::Transition) < 0.55f,
+                 juce::String (meanCorrectionInState (d, vf::NoteDecision::State::Transition), 2)
+                 + " centre pull during transition frames");
+        s.check ("the slide gesture itself passes through unflattened",
+                 meanKeep (d, 0.15) > 0.8f, juce::String (meanKeep (d, 0.15), 2) + " kept");
     }
     {
         // Settle on pitch, then go 35 cents flat and stay there: genuine error.
@@ -127,7 +166,7 @@ void runNoteIntelligenceTests()
         const std::vector<float> flat ((size_t) (1.2 * FPS), centsTo (220.0f, -35.0f));
         v.insert (v.end(), flat.begin(), flat.end());
         const auto d = run (v, def);
-        s.check ("a settled flat note is corrected", meanCorrection (d, 0.75) > 0.25f,
+        s.check ("a settled flat note is corrected in full", meanCorrection (d, 0.75) > 0.9f,
                  juce::String (meanCorrection (d, 0.75), 2) + " mean correction");
     }
 

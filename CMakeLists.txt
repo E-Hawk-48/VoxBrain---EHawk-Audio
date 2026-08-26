@@ -240,6 +240,7 @@ if(VB_BUILD_TESTS)
         Tests/Test_VoiceChanger.cpp
         Tests/Test_Compressor.cpp
         Tests/Test_Smoothing.cpp
+        Tests/Test_TuningAccuracy.cpp
 
         # The engine code under test. Deliberately compiled INTO the test binary
         # rather than linked from the plugin: these units are pure DSP with no

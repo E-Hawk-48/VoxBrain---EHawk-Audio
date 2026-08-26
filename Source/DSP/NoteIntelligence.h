@@ -48,9 +48,25 @@ struct NoteDecision
     float vibratoRateHz  = 0.0f;   // 0 when no vibrato detected
     float vibratoDepthCents = 0.0f;
 
-    /** How much of the configured correction to apply right now (0..1). Reduced
-        during intentional expression, full on genuine off-pitch. */
+    /** How much of the configured correction to apply to the NOTE CENTRE right
+        now (0..1). This is the pull toward the nearest allowed note, so it is
+        reduced only when the target is genuinely uncertain — mid-slide, or on
+        the first frames of an attack. It is deliberately NOT reduced during
+        vibrato: a vibrato note still has a definite centre, and that centre
+        still has to arrive on pitch. */
     float correctionScale = 1.0f;
+
+    /** How much of the singer's live deviation FROM THEIR OWN NOTE CENTRE
+        survives (0..1). 1 = vibrato, scoops and micro-variation pass through
+        untouched; 0 = the pitch is pinned flat on the note (hard tune).
+
+        Separating this from `correctionScale` is the whole point. Expression
+        and accuracy are independent axes: a vibrato note can be moved bodily
+        onto pitch while its swing is left completely intact. Collapsing them
+        into one number — which this engine used to do — means the only way to
+        keep vibrato is to stop correcting, so an expressive singer never gets
+        tuned at all. */
+    float expressionKeep = 1.0f;
 
     /** Multiplier on the retune glide time (>1 = ease, <1 = snap). */
     float glideScale = 1.0f;
@@ -102,6 +118,11 @@ private:
     int   devPos = 0, devFilled = 0;
 
     float vibRate = 0.0f, vibDepth = 0.0f;
+    // Mean of the deviation history. During vibrato this is how far the tracked
+    // centre sits from the TRUE centre of the swing, which is the only way to
+    // recover from a note that began mid-swing (see the vibrato branch in
+    // process()).
+    float vibMeanDev = 0.0f;
     float smoothedDev = 0.0f;
     float driftAccum = 0.0f;
 

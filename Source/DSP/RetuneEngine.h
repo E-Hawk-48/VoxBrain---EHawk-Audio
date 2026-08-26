@@ -120,6 +120,8 @@ private:
     NoteIntelligence notes;
     float noteCorrectionScale = 1.0f;   // updated per analysis hop
     float noteGlideScale      = 1.0f;
+    float noteExpressionKeep  = 1.0f;   // how much live deviation survives
+    float noteCentreHz        = 0.0f;   // the stable note the singer is on
     bool  hqMode = false;               // HQ render: maximum tracking hindsight
 
     // ---- retune logic -------------------------------------------------------
@@ -166,6 +168,8 @@ private:
     // Grain scheduler state
     double nextGrainOut = 0.0;                     // absolute output position
     double lastSourceCentre = 0.0;
+    float  exprSmoothed = 0.0f;      // de-stepped expression term (cents)
+    float  exprSmoothCoeff = 0.0f;   // ~8 ms one-pole, set in prepare
     float  currentRatio = 1.0f;      // correction x transpose (what grains use)
     float  correctionRatio = 1.0f;   // the glided correction component alone
     float  transposeRatio = 1.0f;    // fixed interval, not glided

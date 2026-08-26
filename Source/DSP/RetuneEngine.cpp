@@ -41,6 +41,9 @@ void RetuneEngine::prepare (double sampleRate, int maxBlockSize, int numChannels
 
     configureTracker();
 
+    // ~8 ms one-pole for the expression term (see process()).
+    exprSmoothCoeff = std::exp (-1.0f / (float) (fs * 0.008));
+
     reset();
 }
 
@@ -106,6 +109,8 @@ void RetuneEngine::reset()
     notes.reset();
     noteCorrectionScale = 1.0f;
     noteGlideScale = 1.0f;
+    noteExpressionKeep = 1.0f;
+    noteCentreHz = 0.0f;
 
     writeAbs = 0;
     currentF0 = 0.0f;  f0Confidence = 0.0f;
@@ -119,6 +124,7 @@ void RetuneEngine::reset()
     currentRatio = 1.0f;
     correctionRatio = 1.0f;
     transposeRatio = 1.0f;
+    exprSmoothed = 0.0f;
     gridValid = false;
 }
 
@@ -199,6 +205,8 @@ void RetuneEngine::pushAnalysis (float sample)
     const auto nd = notes.process (f0, tracker.isVoiced());
     noteCorrectionScale = nd.correctionScale;
     noteGlideScale      = nd.glideScale;
+    noteExpressionKeep  = nd.expressionKeep;
+    noteCentreHz        = nd.noteCentreHz;
 
     currentF0 = f0;
     uiInHz.store (f0);
@@ -458,23 +466,57 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
             //    (hard-tune, snaps the current note) with the slow pitch centre
             //    (musical, note-stable), then re-add the natural deviation around
             //    it scaled by `humanize` so vibrato/scoops survive.
-            float targetCents = 0.0f;
+            float targetCents = 0.0f;      // glided: the pull toward the note
+            float exprAdjustCents = 0.0f;  // immediate: scaling of live expression
             if (correcting && voicedState && currentF0 > 0.0f)
             {
-                const float centreHz = (f0Center > 0.0f)
-                                     ? currentF0 * (1.0f - humanize) + f0Center * humanize
-                                     : currentF0;
+                // WHICH PITCH GETS QUANTIZED is the most consequential decision
+                // in this engine, and getting it wrong is inaudible in a unit
+                // test but obvious on a real vocal.
+                //
+                // Quantizing the INSTANTANEOUS pitch (what this did originally)
+                // breaks down the moment a singer uses vibrato: as the swing
+                // crosses the midpoint between two semitones the nearest allowed
+                // note flips, so the engine spends half of every vibrato cycle
+                // pulling UP to A and the other half pulling DOWN to G#. Averaged
+                // over the cycle the correction cancels to nothing, and a note
+                // whose centre is a third of a semitone flat comes out exactly as
+                // flat as it went in. Measured: 35 cents in, 35 cents out.
+                //
+                // The fix is to quantize the NOTE CENTRE — the stable, vibrato-
+                // immune estimate the musical layer already maintains — so the
+                // target note is chosen once and held for the whole note, and the
+                // singer's expression rides on top of a correction that no longer
+                // changes its mind. See DSP/NoteIntelligence.h.
+                const bool  haveCentre = ! hardTune && noteCentreHz > 0.0f;
+                const float centreHz   = haveCentre ? noteCentreHz : currentF0;
+
                 const float snapHz = quantizeTargetHz (centreHz, p);
                 uiTargetHz.store (snapHz);
                 if (snapHz > 0.0f)
                 {
-                    const float vibRatio = currentF0 / juce::jmax (1.0f, centreHz);
-                    const float desiredHz = snapHz * std::pow (vibRatio, humanize);
-                    // The musical layer's verdict scales the depth of correction:
-                    // full on genuine off-pitch, eased through vibrato and slides.
-                    const float musicalAmount = hardTune ? p.amount
-                                                         : p.amount * noteCorrectionScale;
-                    const float rawCents = 1200.0f * std::log2 (desiredHz / currentF0);
+                    // How far the NOTE is from the note it should be — this is
+                    // what "Correction" acts on, and what the snap dead-zone is
+                    // measured against.
+                    const float centreCents = 1200.0f * std::log2 (snapHz / centreHz);
+
+                    // The singer's live deviation from their own centre: vibrato,
+                    // scoops, micro-variation. Clamped because beyond roughly a
+                    // semitone this is no longer expression around a note, it is
+                    // a move to a different one, and the note tracker handles that.
+                    const float exprCents = haveCentre
+                        ? juce::jlimit (-100.0f, 100.0f,
+                                        1200.0f * std::log2 (currentF0 / centreHz))
+                        : 0.0f;
+
+                    // How much of that expression survives. `humanize` biases the
+                    // per-state verdict toward full preservation, so it stays a
+                    // meaningful global control without being a second, competing
+                    // vibrato knob.
+                    const float keep = hardTune
+                        ? 0.0f
+                        : juce::jlimit (0.0f, 1.0f,
+                                        noteExpressionKeep + humanize * (1.0f - noteExpressionKeep));
 
                     // SNAP THRESHOLD: leave micro-deviation completely untouched.
                     // Correcting the last few cents is what makes a voice sound
@@ -485,13 +527,39 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                     float gate = 1.0f;
                     if (snapCents > 0.0f)
                     {
-                        const float a = std::abs (rawCents);
+                        const float a = std::abs (centreCents);
                         gate = a <= snapCents ? 0.0f
                              : juce::jlimit (0.0f, 1.0f, (a - snapCents) / juce::jmax (2.0f, snapCents));
                     }
 
+                    // The centre pull is eased only where the target is genuinely
+                    // uncertain (mid-slide, first frames of an attack) — never
+                    // merely because the singer is being expressive.
+                    const float centrePull = hardTune ? 1.0f : noteCorrectionScale;
+
+                    //  ratio = (target/centre)^amount x (f0/centre)^(keep-1)
+                    //
+                    //  THE TWO HALVES TAKE DIFFERENT PATHS, and this matters.
+                    //  The centre pull is glided, because a note should ARRIVE
+                    //  at pitch over the retune time rather than teleport. The
+                    //  expression term must NOT be: it is a direct scaling of
+                    //  the singer's own live deviation, and a one-pole lag turns
+                    //  scaling into interference. At the default 60 ms retune
+                    //  speed the lag at vibrato rate is over 60 degrees, so
+                    //  turning preservation DOWN made a 5 Hz swing come out 9%
+                    //  WIDER than the untouched input instead of narrower —
+                    //  measured, and audible as the warbly/seasick artifact
+                    //  people associate with badly-set auto-tune.
                     targetCents = juce::jlimit (-700.0f, 700.0f,
-                                                rawCents * musicalAmount * gate);
+                                     centreCents * p.amount * gate * centrePull);
+                    //  Scaled by the SAME amount/gate factors as the centre pull:
+                    //  "Correction 0%" has to mean the tuner is not touching the
+                    //  voice at all, and a note sitting inside the snap dead-zone
+                    //  is a note the engine has decided to leave alone — including
+                    //  its vibrato. Without this the expression term kept
+                    //  narrowing the swing with Correction all the way down.
+                    exprAdjustCents = juce::jlimit (-700.0f, 700.0f,
+                                     exprCents * (keep - 1.0f) * p.amount * gate);
                 }
             }
             else
@@ -509,7 +577,15 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
                                  ? glide * currentCents + (1.0f - glide) * targetCents
                                  : 0.999f * currentCents;   // ease to unity when unvoiced
             correctionRatio = std::pow (2.0f, newCents / 1200.0f);
-            currentRatio    = correctionRatio * transposeRatio;
+
+            // The expression term updates once per analysis hop, so it is
+            // de-stepped with a short (~8 ms) smoother. That is fast enough to
+            // stay in phase with vibrato — the whole point of keeping it off the
+            // retune glide — while removing the hop-rate staircase from the
+            // grain spacing.
+            exprSmoothed += (1.0f - exprSmoothCoeff) * (exprAdjustCents - exprSmoothed);
+            currentRatio = correctionRatio * transposeRatio
+                         * std::pow (2.0f, exprSmoothed / 1200.0f);
 
             // 4. Fire due grains (max grain half-span scales with the active delay)
             const int P = juce::jlimit (32, (delaySamples - activeGrainMargin) / 2,
@@ -572,6 +648,7 @@ void RetuneEngine::process (juce::AudioBuffer<float>& buffer, const RetuneParams
             lastSourceCentre = (double) (n - delaySamples);
             currentRatio = 1.0f;
             correctionRatio = 1.0f;
+            exprSmoothed = 0.0f;
             gridValid = false;
 
             const auto rIdx = (size_t) (n & mask);

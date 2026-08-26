@@ -33,6 +33,7 @@ void NoteIntelligence::reset()
     std::fill (std::begin (devHist), std::end (devHist), 0.0f);
     devPos = devFilled = 0;
     vibRate = vibDepth = 0.0f;
+    vibMeanDev = 0.0f;
     smoothedDev = 0.0f;
     driftAccum = 0.0f;
     prevHz = 0.0f;
@@ -57,7 +58,7 @@ float NoteIntelligence::centsBetween (float a, float b) const
 void NoteIntelligence::updateVibrato()
 {
     const int n = devFilled;
-    if (n < 12) { vibRate = vibDepth = 0.0f; return; }
+    if (n < 12) { vibRate = vibDepth = 0.0f; vibMeanDev = 0.0f; return; }
 
     float mean = 0.0f;
     for (int i = 0; i < n; ++i) mean += devHist[i];
@@ -75,6 +76,8 @@ void NoteIntelligence::updateVibrato()
         if ((v > 0.0f && prev <= 0.0f) || (v < 0.0f && prev >= 0.0f)) ++crossings;
         prev = v;
     }
+
+    vibMeanDev = mean;
 
     const float seconds = (float) n / (float) fps;
     const float rate = seconds > 0.0f ? (float) crossings / (2.0f * seconds) : 0.0f;
@@ -116,6 +119,7 @@ NoteDecision NoteIntelligence::process (float hz, bool voiced)
         }
         d.state = NoteDecision::State::Silent;
         d.correctionScale = 0.0f;
+        d.expressionKeep  = 1.0f;
         d.glideScale = 1.0f;
         lastState = d.state;
         return d;
@@ -143,6 +147,7 @@ NoteDecision NoteIntelligence::process (float hz, bool voiced)
         // Attacks are shaped by the singer; correcting hard on the very first
         // frames is what makes an onset sound clipped/warbly.
         d.correctionScale = 1.0f - 0.5f * params.transitionSmoothing;
+        d.expressionKeep  = 1.0f;     // never squash the shape of an attack
         d.glideScale = 1.0f;
         lastState = d.state;
         return d;
@@ -208,6 +213,27 @@ NoteDecision NoteIntelligence::process (float hz, bool voiced)
             centreHz *= std::pow (2.0f, (dev * follow) / 1200.0f);
             driftAccum = 0.98f * driftAccum + 0.02f * dev;
         }
+        else
+        {
+            // VIBRATO: converge the centre on the MEAN of the swing.
+            //
+            // Following the instantaneous deviation here would make the centre
+            // chase the oscillation and defeat the whole point of having one.
+            // But FREEZING it — which is what this used to do — leaves the
+            // centre wherever the note happened to start, and a note that
+            // begins mid-swing starts up to a full vibrato depth out. That
+            // error never healed, and because the engine measures expression
+            // as deviation from this centre, it leaked straight into the
+            // output: a deep-vibrato note measured 11 cents flat even though
+            // the centre correction itself was working perfectly.
+            //
+            // The mean of the deviation history is exactly that error, and
+            // averaging over the history spans whole cycles, so the swing
+            // itself contributes nothing to it. Converging at roughly a third
+            // of a second is slow enough to ignore the oscillation and fast
+            // enough that the first sustained note is already centred.
+            centreHz *= std::pow (2.0f, (vibMeanDev * 0.02f) / 1200.0f);
+        }
     }
 
     // ---- classify + set the correction policy -------------------------
@@ -220,41 +246,55 @@ NoteDecision NoteIntelligence::process (float hz, bool voiced)
     {
         d.state = NoteDecision::State::Onset;
         d.correctionScale = 1.0f;
+        d.expressionKeep  = 1.0f;
         d.glideScale = 1.0f - 0.35f * params.transitionSmoothing;   // arrive promptly
         d.noteChanged = true;
     }
     else if (vibratoNow)
     {
-        // Correct the CENTRE of the vibrato, not its swing. Scaling correction
-        // down by the preservation amount is what keeps the oscillation intact
-        // instead of squeezing it flat (or, with a fast retune, exaggerating it).
+        // Correct the CENTRE of the vibrato, not its swing.
+        //
+        // This branch used to scale the CENTRE pull down by the preservation
+        // amount, which is the wrong axis and was the single worst-sounding
+        // fault in the engine: at the default 75% preservation a vibrato note
+        // could only ever be pulled a third of the way onto pitch, so every
+        // expressive singer stayed audibly flat no matter where Correction was
+        // set. The centre now gets FULL correction and the swing is preserved
+        // by `expressionKeep` instead, which is what the singer actually wants:
+        // in tune, still expressive.
         d.state = NoteDecision::State::Vibrato;
-        d.correctionScale = 1.0f - 0.9f * params.vibratoPreservation;
+        d.correctionScale = 1.0f;
+        d.expressionKeep  = params.vibratoPreservation;
         d.glideScale = 1.0f + 2.0f * params.vibratoPreservation;
     }
     else if (moving)
     {
-        // A slide/bend in progress: ease off so it is heard as one gesture.
+        // A slide/bend in progress. Here the target genuinely IS uncertain —
+        // the note centre still holds the note being left, not the one being
+        // reached — so easing the centre pull is correct. The gesture itself
+        // passes through untouched (keep = 1) rather than being pulled back
+        // toward the note it is departing from.
         d.state = NoteDecision::State::Transition;
-        d.correctionScale = 1.0f - 0.8f * params.transitionSmoothing;
+        d.correctionScale = 1.0f - 0.85f * params.transitionSmoothing;
+        d.expressionKeep  = 1.0f;
         d.glideScale = 1.0f + 3.0f * params.transitionSmoothing;
     }
     else if (absDev > 6.0f)
     {
-        // Settled but off the note. Flex Tune decides how much natural deviation
-        // is tolerated before correction ramps in — small errors stay human,
-        // clear errors get fixed.
+        // Settled but off the note: correct it. Flex Tune no longer throttles
+        // the pull here — a note that is settled and off pitch is exactly the
+        // case the plugin exists to fix. Flex governs how much micro-variation
+        // is kept on the way, via expressionKeep.
         d.state = NoteDecision::State::OffPitch;
-        const float tolerance = 4.0f + 26.0f * params.flexTune;      // cents
-        const float over = juce::jlimit (0.0f, 1.0f,
-                                         (absDev - tolerance) / std::max (8.0f, tolerance));
-        d.correctionScale = over;
+        d.correctionScale = 1.0f;
+        d.expressionKeep  = params.flexTune;
         d.glideScale = 1.0f;
     }
     else
     {
         d.state = NoteDecision::State::Sustain;
-        d.correctionScale = 1.0f - params.flexTune * 0.5f;
+        d.correctionScale = 1.0f;
+        d.expressionKeep  = params.flexTune;
         d.glideScale = 1.0f;
     }
 
@@ -263,6 +303,7 @@ NoteDecision NoteIntelligence::process (float hz, bool voiced)
     d.vibratoRateHz     = vibRate;
     d.vibratoDepthCents = vibDepth;
     d.correctionScale   = juce::jlimit (0.0f, 1.0f, d.correctionScale);
+    d.expressionKeep    = juce::jlimit (0.0f, 1.0f, d.expressionKeep);
     d.glideScale        = juce::jlimit (0.25f, 6.0f, d.glideScale);
 
     juce::ignoreUnused (wasSilent);
