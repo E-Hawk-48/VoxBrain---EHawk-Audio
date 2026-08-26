@@ -43,20 +43,10 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     addChildComponent (presetBrowser);
     presetBrowser.onClose = [this] { togglePresets(); };
 
-    themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
-    themeButton.setTooltip ("Recolour VoxBrain — choose a neon scheme or pick your own colours.");
-    themeButton.onClick = [this] { toggleTheme(); };
-    addAndMakeVisible (themeButton);
-
-    simpleButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
-    simpleButton.setTooltip ("Switch between Simple (essentials only) and Advanced (all controls) views.");
-    simpleButton.onClick = [this] { toggleSimpleMode(); };
-    addAndMakeVisible (simpleButton);
-
-    helpButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
-    helpButton.setTooltip ("Turn hover help on or off. When on, rest the mouse over any control for a plain-language tip.");
-    helpButton.onClick = [this] { toggleHelp(); };
-    addAndMakeVisible (helpButton);
+    setupButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+    setupButton.setTooltip ("Colours, Simple/Advanced view, and hover help.");
+    setupButton.onClick = [this] { showSetupMenu(); };
+    addAndMakeVisible (setupButton);
 
     referenceButton.setColour (juce::TextButton::buttonColourId, theme::accent.withAlpha (0.65f));
     referenceButton.setTooltip ("AI Reference Match — open the analyzer, then drag an audio file in (or Browse). "
@@ -111,7 +101,7 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
         lookAndFeel.refreshColours();
         learnButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
         presetsButton.setColour (juce::TextButton::buttonColourId, theme::accentWarm.withAlpha (0.85f));
-        themeButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+        setupButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
         theme::save();
         repaint();
     };
@@ -151,8 +141,11 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     applyUiPrefs();                // reflect the restored Simple/Advanced + help choice
 
     setResizable (true, true);
-    setResizeLimits (900, 700, 2400, 1600);
-    setSize (1120, 800);
+    // The minimum height is derived from the layout minimums in resized()
+    // (header + scope + pitch + report + chain + preset bar), so the window can
+    // never be sized into the state where a region collapses.
+    setResizeLimits (940, 740, 2600, 1800);
+    setSize (1180, 860);
     startTimerHz (20);
 }
 
@@ -217,7 +210,6 @@ void VoxBrainEditor::applyUiPrefs()
 {
     // Simple/Advanced view
     chainView.setSimpleMode (uiprefs::simpleMode);
-    simpleButton.setButtonText (uiprefs::simpleMode ? "SIMPLE" : "ADVANCED");
 
     // Hover help: creating the TooltipWindow activates every setTooltip in the
     // plugin; destroying it disables them. Owned by the editor so it lives and
@@ -231,9 +223,33 @@ void VoxBrainEditor::applyUiPrefs()
     {
         tooltipWindow.reset();
     }
-    helpButton.setButtonText (uiprefs::tooltipsOn ? "HELP ON" : "HELP OFF");
-    helpButton.setColour (juce::TextButton::buttonColourId,
-                          uiprefs::tooltipsOn ? theme::accent.withAlpha (0.55f) : theme::panelLight);
+}
+
+// ---------------------------------------------------------------------------
+//  SETUP menu — the three former header toggles, plus the theme editor.
+// ---------------------------------------------------------------------------
+void VoxBrainEditor::showSetupMenu()
+{
+    juce::PopupMenu m;
+    m.setLookAndFeel (&lookAndFeel);
+
+    m.addSectionHeader ("View");
+    m.addItem (1, "Simple  (essentials only)", true, uiprefs::simpleMode);
+    m.addItem (2, "Advanced  (every control)", true, ! uiprefs::simpleMode);
+    m.addSeparator();
+    m.addItem (3, "Hover help", true, uiprefs::tooltipsOn);
+    m.addSeparator();
+    m.addSectionHeader ("Appearance");
+    m.addItem (4, "Colours...");
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&setupButton),
+                     [this] (int r)
+    {
+        if (r == 1 && ! uiprefs::simpleMode) toggleSimpleMode();
+        else if (r == 2 && uiprefs::simpleMode) toggleSimpleMode();
+        else if (r == 3) toggleHelp();
+        else if (r == 4) toggleTheme();
+    });
 }
 
 // ============================================================================
@@ -401,7 +417,7 @@ void VoxBrainEditor::paint (juce::Graphics& g)
     g.drawText ("VOXBRAIN", header, juce::Justification::centredLeft);
     // The header now holds seven buttons; only show the decorative subtitle when
     // the window is wide enough that it can't collide with the leftmost button.
-    if (getWidth() >= 1200)
+    if (getWidth() >= 1040)
     {
         g.setColour (theme::accent);
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
@@ -420,11 +436,7 @@ void VoxBrainEditor::resized()
     header.removeFromRight (8);
     referenceButton.setBounds (header.removeFromRight (104));
     header.removeFromRight (8);
-    themeButton.setBounds (header.removeFromRight (74));
-    header.removeFromRight (8);
-    simpleButton.setBounds (header.removeFromRight (96));
-    header.removeFromRight (8);
-    helpButton.setBounds (header.removeFromRight (74));
+    setupButton.setBounds (header.removeFromRight (86));
 
     // Theme panel: a floating card, centred over the content.
     themePanel.setBounds (getLocalBounds().withSizeKeepingCentre (420, 620));
@@ -441,16 +453,70 @@ void VoxBrainEditor::resized()
         updateBanner.setBounds (area.removeFromTop (34).reduced (10, 2));
 
     area.reduce (10, 0);
-    // The unified chain (strip + focused module + add bar) is the main page.
-    chainView.setBounds (area.removeFromBottom (juce::jlimit (300, 460, area.getHeight() * 52 / 100)));
-    analysisPanel.setBounds (area.removeFromBottom (150).reduced (0, 4));
-    presetBar.setBounds (area.removeFromBottom (36));
-    pitchDisplay.setBounds (area.removeFromBottom (120).reduced (0, 4));
+
+    // ------------------------------------------------------------------
+    //  VERTICAL LAYOUT — minimums first, then share out what is left.
+    //
+    //  This used to carve fixed heights off the BOTTOM in sequence and give
+    //  the scope whatever survived. At the default window size the arithmetic
+    //  worked out to 54 pixels for the spectrum and the Vocal DNA radar
+    //  combined, and at the minimum window height the scope got 5 — the two
+    //  headline visualisations in the plugin, squeezed to nothing, on every
+    //  machine. Nothing about that is visible when you write it; it only shows
+    //  up when you add up the constants.
+    //
+    //  Allocating each region its minimum first and distributing the leftover
+    //  by weight makes the failure impossible: every region is always at least
+    //  usable, and extra height goes where it helps most.
+    // ------------------------------------------------------------------
+    struct Region { int minH; int weight; int h; };
+    Region scope   { 130, 3, 0 };   // spectrum + Vocal DNA radar
+    Region pitch   {  92, 1, 0 };   // live tuning display
+    Region report  { 112, 1, 0 };   // AI report + chat
+    Region chain   { 300, 4, 0 };   // the module chain (main working area)
+    const int presetBarH = 36;
+
+    Region* regions[] = { &scope, &pitch, &report, &chain };
+
+    int totalMin = presetBarH, totalWeight = 0;
+    for (auto* r : regions) { r->h = r->minH; totalMin += r->minH; totalWeight += r->weight; }
+
+    int spare = area.getHeight() - totalMin;
+    if (spare > 0 && totalWeight > 0)
+    {
+        int given = 0;
+        for (auto* r : regions)
+        {
+            const int add = spare * r->weight / totalWeight;
+            r->h += add;
+            given += add;
+        }
+        chain.h += spare - given;                       // rounding remainder
+    }
+    else if (spare < 0)
+    {
+        // Window shorter than the sum of the minimums (a host can force this).
+        // Shrink proportionally rather than letting the last region go negative.
+        const double k = (double) juce::jmax (1, area.getHeight() - presetBarH)
+                       / (double) juce::jmax (1, totalMin - presetBarH);
+        for (auto* r : regions) r->h = juce::jmax (24, (int) (r->h * k));
+    }
+
+    chain.h = juce::jmin (chain.h, 560);                // stop it eating a tall window
+    chainView.setBounds (area.removeFromBottom (chain.h));
+    analysisPanel.setBounds (area.removeFromBottom (report.h).reduced (0, 4));
+    presetBar.setBounds (area.removeFromBottom (presetBarH));
+    pitchDisplay.setBounds (area.removeFromBottom (pitch.h).reduced (0, 4));
 
     // Top visual row: spectrum on the left, live Vocal DNA radar on the right.
+    // The radar is dropped entirely on narrow windows rather than being crushed
+    // into an unreadable sliver.
     auto top = area.reduced (3, 4);
     const int radarW = juce::jlimit (200, 320, top.getWidth() * 38 / 100);
-    dnaPanel.setBounds (top.removeFromRight (radarW).reduced (6, 0));
+    const bool showRadar = top.getWidth() - radarW >= 320;
+    dnaPanel.setVisible (showRadar);
+    if (showRadar)
+        dnaPanel.setBounds (top.removeFromRight (radarW).reduced (6, 0));
     spectrum.setBounds (top);
 }
 } // namespace vf

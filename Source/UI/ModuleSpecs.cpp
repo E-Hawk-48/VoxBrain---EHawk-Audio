@@ -18,25 +18,44 @@ const StageSpec& specForStage (S s)
     static const StageSpec specs[VocalChain::kStageCount] =
     {
         // Retune -----------------------------------------------------------
+        //  THE PITCH CARD used to put twelve knobs and five menus on one face,
+        //  and six of those knobs were different answers to the same question:
+        //  "how much tuning?". Amount, Hard Tune, Flex, Snap, Vibrato and
+        //  Humanize all pull on correction depth, they interact, and no
+        //  ordering of them is obvious — so the card read as noise even to
+        //  someone who knows what auto-tune does.
+        //
+        //  Three controls answer that question in a way a producer can hold in
+        //  their head, and they are the only ones on the face now:
+        //     AMOUNT    how much of the error gets fixed   (0 = off, 100 = in tune)
+        //     SPEED     how fast it gets there             (fast = the robotic sound)
+        //     HARD TUNE the one-knob modern sound          (overrides the rest)
+        //  ...plus the musical context (Key / Scale) and the Voice menu.
+        //
+        //  Nothing was removed: every other control is still here, still
+        //  automatable, still saved with sessions and presets — just behind
+        //  Advanced, where a control you reach for once a month belongs. The
+        //  parameter IDs are untouched, so existing sessions and presets load
+        //  exactly as before.
         { "Pitch", pitchOn, pitchLock,
-          { { pitchSpeed, "Speed", "How fast the pitch snaps to the note. Fast = robotic/hard-tune, slow = natural.", true },
-            { pitchAmount, "Amount", "How strongly the vocal is pulled onto the correct pitch. 0 = off, 100% = fully tuned." },
-            { pitchHardTune, "Hard Tune", "One knob for the modern auto-tune sound: turn it up and the tuning becomes instant and robotic, overriding the natural-correction controls below." },
-            // --- expression controls (hidden in Simple mode) ---
+          { { pitchAmount, "Amount", "How strongly the vocal is pulled onto the correct pitch. 0 = off, 100% = fully in tune. This is the main tuning control." },
+            { pitchSpeed, "Speed", "How fast the pitch arrives at the note. Fast (near 0) gives the hard, robotic sound; slow lets the singer's phrasing through." },
+            { pitchHardTune, "Hard Tune", "One knob for the modern auto-tune sound: turn it up and tuning becomes instant and locked, overriding the expression controls in Advanced." },
+            // --- expression controls (Advanced) ---
             { pitchFlex, "Flex", "How much natural pitch variation to leave alone. Higher = only obvious wrong notes get fixed, so the performance stays human.", true },
-            { pitchVibrato, "Vibrato", "Protects your vibrato. High = vibrato passes through untouched; low = vibrato gets tuned flat.", true },
+            { pitchVibrato, "Vibrato", "Protects your vibrato. High leaves the wobble untouched; low tightens it. Your note still gets tuned either way — this only decides how much of the wobble survives.", true },
             { pitchTransition, "Glide", "Lets slides and bends between notes breathe instead of snapping. Turn down for stepped, robotic transitions.", true },
             { pitchDrift, "Drift", "Pulls slow drifting off-pitch back to the note, without touching fast expression.", true },
-            { pitchSnap, "Snap", "Ignores tiny pitch differences (in cents). Small amounts keep the voice natural; 0 corrects absolutely everything.", true },
+            { pitchSnap, "Snap", "Leaves pitch differences smaller than this (in cents) completely alone. A little keeps the voice natural; 0 corrects absolutely everything.", true },
             { pitchSensitivity, "Sens", "How eagerly the tuner decides something is a sung note. Lower it for breathy or noisy takes, raise it for quiet singing.", true },
-            { pitchHumanize, "Human", "Re-adds natural pitch movement after tuning, for a less machine-like result.", true },
-            // --- Voice Changer ---
-            { pitchTranspose, "Transpose", "Shifts the whole voice up or down in semitones (12 = a full octave). This is separate from tuning: it moves the note itself, so you can be perfectly in tune AND an octave lower." },
-            { pitchFormant, "Formant", "Changes the apparent SIZE of the singer's head and throat without changing the note. Down = bigger/deeper body, up = smaller/younger. Use it with Transpose: move both the same way for a believable bigger or smaller person, opposite ways for something inhuman." } },
-          { { pitchVoice, "Voice", "Voice Changer: pick a character (Demonic, Child, Robot, Radio…) and the whole chain is set up for it in one move. Undo restores your previous sound." },
-            { pitchKey, "Key", "The musical key the tuner snaps to — set this to your song's key." },
+            { pitchHumanize, "Human", "Biases all the expression controls above toward 'leave it alone'. A quick way to soften tuning without setting each one.", true },
+            // --- Voice Changer (Advanced: the Voice menu drives these) ---
+            { pitchTranspose, "Transpose", "Shifts the whole voice up or down in semitones (12 = a full octave). Separate from tuning: you can be perfectly in tune AND an octave lower.", true },
+            { pitchFormant, "Formant", "Changes the apparent SIZE of the singer's head and throat without changing the note. Down = bigger/deeper body, up = smaller/younger. Move it with Transpose for a believable bigger or smaller person, against it for something inhuman.", true } },
+          { { pitchKey, "Key", "The musical key the tuner snaps to — set this to your song's key." },
             { pitchScale, "Scale", "The scale used for tuning (Major, Minor, Chromatic…). Match your song." },
-            { pitchLatency, "Latency", "Live = lowest delay, best for tracking/performing (won't tune very low notes); Studio = most accurate on low notes; Balanced is in between." },
+            { pitchVoice, "Voice", "Voice Changer: pick a character (Demonic, Child, Robot, Radio…) and the whole chain is set up for it in one move. Undo restores your previous sound." },
+            { pitchLatency, "Latency", "Live = lowest delay, best for tracking/performing (won't tune very low notes); Studio = most accurate on low notes; Balanced is in between.", true },
             { pitchHQ, "HQ Render", "Highest-quality tracking for bouncing/exporting. Costs a little extra delay, so leave it off while recording.", true } },
           false },
 

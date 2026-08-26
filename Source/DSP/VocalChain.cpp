@@ -1023,6 +1023,23 @@ void OutputLimiter::process (juce::AudioBuffer<float>& buffer, const LimitParams
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> ctx (block);
     limiter.process (ctx);
+
+    // CEILING HAS TO MEAN CEILING.
+    //
+    // juce::dsp::Limiter is a loudness maximiser, not a brickwall: after
+    // limiting it applies a makeup gain of exactly -threshold (see
+    // juce_Limiter.cpp, update()), so whatever you set the threshold to, the
+    // output comes back up to roughly 0 dBFS. VoxBrain exposed that threshold
+    // as "Ceiling", so a user asking for -6 dB of headroom was handed a signal
+    // peaking at 0 dBFS instead — measured: 0.00 dB peak for a -6 dB ceiling.
+    // On a vocal bus that is the difference between leaving room for the mix
+    // and clipping the master.
+    //
+    // Undoing the makeup restores the advertised behaviour exactly: the
+    // limiting still happens, but the result sits at the ceiling the user
+    // asked for. `gainDb` above is the drive control, which is the honest
+    // place to ask for more loudness.
+    buffer.applyGain (dbToGain (p.ceilingDb));
 }
 
 // ============================================================================

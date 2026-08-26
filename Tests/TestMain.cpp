@@ -19,6 +19,7 @@ void runCompressorTests();
 void runSmoothingTests();
 void runVoiceChangerTests();
 void runTuningAccuracyTests();
+void runChainModuleTests();
 
 int main (int, char**)
 {
@@ -36,6 +37,7 @@ int main (int, char**)
     runSmoothingTests();
     runVoiceChangerTests();
     runTuningAccuracyTests();
+    runChainModuleTests();
 
     return vftest::Registry::instance().report();
 }

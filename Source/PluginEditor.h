@@ -57,9 +57,13 @@ private:
 
     juce::TextButton learnButton { "LEARN" };
     juce::TextButton presetsButton { "PRESETS" };
-    juce::TextButton themeButton { "THEME" };
-    juce::TextButton simpleButton { "ADVANCED" };   // toggles Simple / Advanced view
-    juce::TextButton helpButton { "HELP" };         // toggles hover tooltips
+    // ONE settings button instead of three toggles. The header carried seven
+    // buttons plus a wordmark, which left the plugin looking like a control
+    // panel before you had done anything with it, and forced the subtitle to be
+    // hidden below 1200 px just to avoid a collision. Theme / Simple / Help are
+    // all "set it once" choices, so they belong in a menu, not on the face.
+    juce::TextButton setupButton { "SETUP" };
+    void showSetupMenu();
     juce::TextButton referenceButton { "REFERENCE" };   // AI Reference Mix Analyzer
     std::unique_ptr<juce::FileChooser> fileChooser;     // kept alive for the async picker
     juce::String refFileName;                           // name of the file being analysed
