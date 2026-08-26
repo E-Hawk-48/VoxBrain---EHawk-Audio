@@ -23,6 +23,7 @@ void runChainModuleTests();
 void runRackModuleTests();
 void runHostMatrixTests();
 void runLayoutTests();
+void runGenreProfileTests();
 
 int main (int, char**)
 {
@@ -44,6 +45,7 @@ int main (int, char**)
     runRackModuleTests();
     runHostMatrixTests();
     runLayoutTests();
+    runGenreProfileTests();
 
     return vftest::Registry::instance().report();
 }

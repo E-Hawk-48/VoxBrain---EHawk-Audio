@@ -31,6 +31,90 @@ folder yourself (they'll rerun the script when asked). Iterate fast.
    border + knobs disabled (bypass stays live). Saved with state/presets
    automatically. `vf::param::lockParamFor(id)` maps any param → its lock.
 
+
+## v0.6.0 — CORRECTNESS PASS (this session; all verified by running tests)
+
+Test suite went 119 -> 220 assertions. Four real, user-visible defects found and
+fixed. Every one was found by MEASURING DELIVERED OUTPUT, not by reading code.
+
+### 1. Pitch correction did nothing on an expressive vocal (the big one)
+`Tests/Test_TuningAccuracy.cpp` asks the only question a singer cares about:
+"with the plugin as it ships and Correction on 100, how far off pitch is the
+note that comes out?" Answer for a vibrato note: **35 cents in, 35.2 cents out**
+— no correction at all. Three compounding faults:
+  * The centre pull was throttled by `vibratoPreservation`, so at the shipping
+    default a vibrato note could only ever be pulled a THIRD of the way onto
+    pitch. Correction depth and expression preservation are now separate axes:
+    `NoteDecision::expressionKeep` carries preservation, `correctionScale` is
+    reduced ONLY where the target is genuinely uncertain (mid-slide, attack).
+  * The scale quantizer chased the INSTANTANEOUS pitch, so mid-swing the nearest
+    allowed note flipped between A and G# and the net pull averaged to zero. It
+    now quantizes the stable NOTE CENTRE. **This is the load-bearing fix.**
+  * The note centre was seeded from whatever pitch the note started on and then
+    FROZEN during vibrato, so a note starting mid-swing kept a permanent offset.
+    It now converges on `vibMeanDev`, the mean of the deviation history.
+Also found while measuring: the expression term was going through the retune
+glide, and at 60 ms the phase lag at vibrato rate turned cancellation into
+reinforcement — turning preservation DOWN made the swing come out 9% WIDER than
+untouched (the warbly artifact). It is now applied directly (8 ms de-stepping
+smoother only) and scaled by amount/gate so Correction 0% is fully transparent.
+Measured after: sustained 45c flat -> -0.4 cents; deep vibrato -> -4.8 cents.
+NOTE: how far preservation can flatten a swing is bounded by the TRACKER (23 ms
+window + 23 ms Viterbi hindsight), not by the control — roughly a quarter of the
+modulation survives at preservation 0. Do not "fix" that by over-compensating;
+that is exactly how the exaggeration artifact got in. Full flattening is Hard
+Tune, which takes the other path (quantizes instantaneous pitch).
+
+### 2. The Limiter did not limit to its ceiling
+`juce::dsp::Limiter` is a loudness maximiser: after limiting it applies makeup of
+exactly `-threshold` (juce_Limiter.cpp, update()). VoxBrain exposed that
+threshold as "Ceiling", so asking for -6 dB of headroom produced **0.00 dBFS**.
+`OutputLimiter::process` now undoes the makeup. `limitGain` remains the drive.
+
+### 3. The main window squeezed its visualisations to 54 px
+Heights were carved off the bottom in sequence and the spectrum + Vocal DNA radar
+got the residue: 54 px at the shipped size, 5 px at the minimum. The chain strip
+had the same shape of bug (list height / row count, no floor -> ~18 px rows on a
+full chain). Both now go through `UI/LayoutMath.h`, a pure function tested
+directly in `Tests/Test_Layout.cpp`. Scope is now 176 px; the strip scrolls
+(wheel, drag auto-scroll, scroll-into-view, indicator) below a 30 px row floor.
+**Rule: layout arithmetic in GUI code needs a pure function and a test — nothing
+about the old code looked wrong; you only see it by adding up the constants.**
+
+### 4. Genre presets promised hard tuning and did not deliver it
+Drill / UK Drill / Rage / Hyperpop / Emo Trap / Trap all describe themselves as
+"hard-tuned" and set Retune Speed 0, but never set `pitch_hardtune` — so the
+expression defaults (Flex 35 / Vibrato 75 / Transition 60) kept handing the
+performance back and "make it drill" produced a soft, natural tune. Fixed, and
+`Tests/Test_GenreProfiles.cpp` now ties description to settings in BOTH
+directions (a profile calling itself "gentle" must not be secretly hard-tuned).
+
+### UI / control surface
+* PITCH card had 12 knobs + 5 menus, six of which were competing answers to "how
+  much tuning?". Face now shows Amount / Speed / Hard Tune + Key / Scale / Voice;
+  everything else moved behind Advanced. **No parameter IDs changed** — sessions
+  and presets load identically.
+* Header: 7 buttons -> 4. Theme / Simple / Help moved into a SETUP menu.
+* NEW: interface scale 75–175% (`uiprefs::uiScalePercent`, persisted in ui.xml),
+  applied as a component transform so `resized()` stays in unscaled coordinates.
+
+### New test suites
+`Test_TuningAccuracy` (end-to-end cents), `Test_ChainModules` (does each control
+do what it says), `Test_RackModules` (all 30 modules run; asserts the module
+count first because `ModuleRegistry::instance()` does NOT self-register and a
+missed `registerBuiltInModules()` makes every assertion vacuous),
+`Test_HostMatrix` (44.1/48/88.2/96/192 kHz, block sizes 16–2048 incl. 100/333,
+reported-vs-actual latency — no rate-dependent defects found, now locked in),
+`Test_Layout`, `Test_GenreProfiles`.
+
+TEST-WRITING GOTCHAS PAID FOR THIS SESSION: measure a vibrato note's centre with
+a MEDIAN of short windows (a single autocorrelation window is pulled by the
+swing); measure swing depth with a window much shorter than the vibrato period
+(75 ms over a 200 ms cycle inverted the comparison and made a working control
+look broken); probe a shelf AT its corner frequency; and detect clicks as
+OUTLIERS against the waveform's own 99.9th-percentile slew, because an absolute
+slew threshold just measures how bright the test tone is.
+
 ## Flagship roadmap (user-provided, 21 items) — build in verified increments
 DONE: #1 Lockable modules; #20 Saturation models (8 algorithms); #21 Reverb
 (FDN, 7 algorithms); #12 Auto-update (in-plugin updater + server tooling +
@@ -431,22 +515,33 @@ verified feature per session, same as #1.
 - Build output/log: `build_log.txt` (mixed UTF-8/UTF-16 — use `strings` and
   `strings -e l` when reading it programmatically).
 
-## Verification workflow used so far
+## Verification workflow — READ THIS FIRST (it changed)
 
-No Windows toolchain in the Claude sandbox. Verify by syntax-checking each
-translation unit on Linux against real JUCE (already fetched at
-`build/_deps/juce-src` and `/tmp/juce`; modules dir = `/tmp/juce/modules`) and
-real ORT Linux headers, with `-fsyntax-only -std=c++20 -mavx2`. Required flag:
-`-I/tmp/juce/modules -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1` (silences JUCE's
-"No global header file was included!" guard) plus `-DJUCE_WEB_BROWSER=0
--DJUCE_USE_CURL=0`. X11 dev headers ARE present, so juce_gui_basics /
-juce_audio_processors TUs compile. When the mount view of just-edited files is
-stale (see below), compile a standalone harness containing the new code, or
-reconstruct the file into /tmp — that's how P5 DSP was verified. Note: the sandbox's mounted view of recently-edited files can lag
-several minutes and appear truncated at the file's OLD length — the file on
-the user's disk is fine (Read tool is authoritative); wait or reconstruct the
-file in /tmp to verify. MSVC-only issues (NOMINMAX etc.) won't show on Linux —
-think about Windows specifics when touching platform code.
+**A full MSVC toolchain IS available in this environment.** Earlier sessions
+assumed there was none and verified by syntax-checking translation units against
+JUCE on Linux, which is why the MSVC-only `constexpr std::log` failure (C2131)
+reached a real build. That workaround is no longer necessary:
+
+```
+cmake -S . -B build-tests -G "Visual Studio 18 2026" -A x64 -DVB_BUILD_TESTS=ON
+cmake --build build-tests --config Release --target VoxBrainTests -- -m
+./build-tests/Release/VoxBrainTests.exe
+cmake --build build --config Release --target VoxBrain_Standalone VoxBrain_VST3 -- -m
+```
+
+Build the tests and RUN them; build the real plugin too. A test-suite build only
+covers the DSP TUs, so it will not catch a break in the editor/processor — build
+both. `python Tests/check_param_ranges.py` checks the genre/character data tables.
+
+**The lesson from this session: passing component tests prove very little.** The
+suite was at 119/119 while the plugin's headline feature was audibly broken,
+because every test measured a COMPONENT and none measured the delivered result.
+When a user says something "sounds off", write the end-to-end measurement first —
+it will usually find the bug before you have finished reading the code.
+
+The GUI cannot be inspected here (a request to drive the standalone was declined),
+so UI changes are verified by build + the layout arithmetic tests, NOT by eye.
+Say so plainly rather than implying the interface has been seen.
 
 ## Conventions
 

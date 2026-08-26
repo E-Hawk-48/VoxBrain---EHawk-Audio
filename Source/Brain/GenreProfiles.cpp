@@ -50,7 +50,7 @@ namespace
                { compOn, 1 }, { compThreshold, -21 }, { compRatio, 4 }, { compAttack, 5 }, { compRelease, 80 },
                { deessOn, 1 }, { deessFreq, 7000 },
                { satOn, 1 }, { satType, SAT_TUBE }, { satDrive, 35 }, { satMix, 28 },
-               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 10 }, { pitchAmount, 95 }, { pitchHumanize, 5 },
+               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 10 }, { pitchAmount, 95 }, { pitchHardTune, 85 }, { pitchHumanize, 5 },
                { delayOn, 1 }, { delayTime, 160 }, { delayFeedback, 20 }, { delayMix, 11 },
                { verbOn, 1 }, { verbType, VERB_ROOM }, { verbSize, 30 }, { verbMix, 8 }, { verbDuck, 35 } });
 
@@ -63,7 +63,7 @@ namespace
                { compOn, 1 }, { compThreshold, -22 }, { compRatio, 4 }, { compAttack, 8 }, { compRelease, 140 },
                { deessOn, 1 }, { deessFreq, 6500 },
                { satOn, 1 }, { satType, SAT_TAPE }, { satDrive, 40 }, { satTone, 40 }, { satMix, 40 },
-               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 5 }, { pitchAmount, 100 }, { pitchHumanize, 0 },
+               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 5 }, { pitchAmount, 100 }, { pitchHardTune, 90 }, { pitchHumanize, 0 },
                { delayOn, 1 }, { delayTime, 320 }, { delayFeedback, 32 }, { delayMix, 20 },
                { verbOn, 1 }, { verbType, VERB_PLATE }, { verbSize, 65 }, { verbDecay, 62 },
                { verbDamp, 62 }, { verbWidth, 100 }, { verbMix, 26 }, { verbDuck, 30 } });
@@ -74,7 +74,7 @@ namespace
              { { eqOn, 1 }, { eqHpfFreq, 100 }, { eqPresenceGain, 2 }, { eqAirGain, -2 },
                { compOn, 1 }, { compThreshold, -22 }, { compRatio, 4.5f }, { compAttack, 4 }, { compRelease, 80 },
                { deessOn, 1 }, { satOn, 1 }, { satType, SAT_CONSOLE }, { satDrive, 30 }, { satMix, 25 },
-               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 0 }, { pitchAmount, 100 }, { pitchHumanize, 0 },
+               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 0 }, { pitchAmount, 100 }, { pitchHardTune, 100 }, { pitchHumanize, 0 },
                { verbOn, 1 }, { verbType, VERB_ROOM }, { verbSize, 28 }, { verbMix, 6 }, { verbDamp, 70 } });
 
         add ("uk_drill", "UK Drill", "Hip-Hop",
@@ -83,7 +83,7 @@ namespace
              { { eqOn, 1 }, { eqHpfFreq, 110 }, { eqMudGain, -3 }, { eqPresenceGain, 3 }, { eqAirGain, -2.5f },
                { compOn, 1 }, { compThreshold, -23 }, { compRatio, 5 }, { compAttack, 3 }, { compRelease, 70 },
                { deessOn, 1 }, { satOn, 1 }, { satType, SAT_CONSOLE }, { satDrive, 35 }, { satMix, 30 },
-               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 0 }, { pitchAmount, 100 },
+               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 0 }, { pitchAmount, 100 }, { pitchHardTune, 100 },
                { delayOn, 0 }, { verbOn, 1 }, { verbType, VERB_ROOM }, { verbSize, 22 }, { verbMix, 4 }, { verbDamp, 75 } });
 
         add ("plugg", "Plugg", "Hip-Hop",
@@ -102,7 +102,7 @@ namespace
              { { eqOn, 1 }, { eqHpfFreq, 120 }, { eqMudGain, -3 }, { eqPresenceGain, 4.5f }, { eqAirGain, 2 },
                { compOn, 1 }, { compThreshold, -24 }, { compRatio, 6 }, { compAttack, 3 }, { compRelease, 70 },
                { deessOn, 1 }, { satOn, 1 }, { satType, SAT_DIODE }, { satDrive, 65 }, { satMix, 55 },
-               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 0 }, { pitchAmount, 100 },
+               { pitchOn, 1 }, { pitchScale, SCALE_MINOR }, { pitchSpeed, 0 }, { pitchAmount, 100 }, { pitchHardTune, 100 },
                { delayOn, 1 }, { delayTime, 200 }, { delayMix, 12 },
                { verbOn, 1 }, { verbType, VERB_ROOM }, { verbSize, 40 }, { verbMix, 10 } });
 
@@ -167,7 +167,7 @@ namespace
                { deessOn, 1 }, { deessThreshold, -34 },
                { compOn, 1 }, { compThreshold, -24 }, { compRatio, 6 }, { compAttack, 2 }, { compRelease, 70 },
                { satOn, 1 }, { satType, SAT_DIODE }, { satDrive, 50 }, { satMix, 45 },
-               { pitchOn, 1 }, { pitchSpeed, 0 }, { pitchAmount, 100 }, { pitchHumanize, 0 }, { pitchFormant, 1 },
+               { pitchOn, 1 }, { pitchSpeed, 0 }, { pitchAmount, 100 }, { pitchHardTune, 100 }, { pitchHumanize, 0 }, { pitchFormant, 1 },
                { delayOn, 1 }, { delayTime, 140 }, { delayFeedback, 30 }, { delayMix, 16 },
                { verbOn, 1 }, { verbType, VERB_SHIMMER }, { verbSize, 55 }, { verbWidth, 100 },
                { verbMix, 20 }, { verbShimmer, 45 } });
