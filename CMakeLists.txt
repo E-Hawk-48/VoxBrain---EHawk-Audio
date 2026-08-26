@@ -142,8 +142,11 @@ target_compile_definitions(VoxBrain PUBLIC
     #  Reads the latest GitHub Release of your repo. Publish a Release (tag like
     #  v1.2.0) with the .exe + .pkg installers attached and installed copies pick
     #  it up automatically. (Works because the repo/Releases are public.)
-    #  NOTE: the repo is still named Custom-Vocal-Plugin on GitHub — this URL
-    #  matches the real repo. If you rename the repo to VoxBrain, update it here.
+    #  NOTE: the repo was renamed to VoxBrain---EHawk-Audio and this URL follows
+    #  it. GitHub still answers the old Custom-Vocal-Plugin path with a 301, so
+    #  copies built before v0.6.1 keep updating fine - but if you rename the repo
+    #  again, change this line: that redirect is the only thing holding older
+    #  installs together.
     VOXBRAIN_VERSION="${PROJECT_VERSION}"
     VOXBRAIN_UPDATE_URL="https://api.github.com/repos/E-Hawk-48/VoxBrain---EHawk-Audio/releases/latest"
 )
