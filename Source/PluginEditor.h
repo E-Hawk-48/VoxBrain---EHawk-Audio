@@ -64,6 +64,12 @@ private:
     // all "set it once" choices, so they belong in a menu, not on the face.
     juce::TextButton setupButton { "SETUP" };
     void showSetupMenu();
+    void applyUiScale();          // push uiprefs::uiScalePercent onto the window
+
+    // Layout size at 100%. The window's actual size is this multiplied by the
+    // user's interface scale, so the layout code in resized() only ever deals
+    // in unscaled coordinates.
+    int baseWidth = 1180, baseHeight = 860;
     juce::TextButton referenceButton { "REFERENCE" };   // AI Reference Mix Analyzer
     std::unique_ptr<juce::FileChooser> fileChooser;     // kept alive for the async picker
     juce::String refFileName;                           // name of the file being analysed

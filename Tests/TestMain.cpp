@@ -20,6 +20,8 @@ void runSmoothingTests();
 void runVoiceChangerTests();
 void runTuningAccuracyTests();
 void runChainModuleTests();
+void runRackModuleTests();
+void runHostMatrixTests();
 
 int main (int, char**)
 {
@@ -38,6 +40,8 @@ int main (int, char**)
     runVoiceChangerTests();
     runTuningAccuracyTests();
     runChainModuleTests();
+    runRackModuleTests();
+    runHostMatrixTests();
 
     return vftest::Registry::instance().report();
 }

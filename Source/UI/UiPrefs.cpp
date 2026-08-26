@@ -13,6 +13,7 @@ namespace vf::uiprefs
         auto e = std::make_unique<juce::XmlElement> ("UiPrefs");
         e->setAttribute ("simpleMode", simpleMode ? 1 : 0);
         e->setAttribute ("tooltipsOn", tooltipsOn ? 1 : 0);
+        e->setAttribute ("uiScalePercent", uiScalePercent);
         return e;
     }
 
@@ -21,6 +22,8 @@ namespace vf::uiprefs
         if (e == nullptr || ! e->hasTagName ("UiPrefs")) return;
         simpleMode = e->getIntAttribute ("simpleMode", simpleMode ? 1 : 0) != 0;
         tooltipsOn = e->getIntAttribute ("tooltipsOn", tooltipsOn ? 1 : 0) != 0;
+        uiScalePercent = juce::jlimit (kMinScale, kMaxScale,
+                                       e->getIntAttribute ("uiScalePercent", uiScalePercent));
     }
 
     void load()

@@ -145,7 +145,8 @@ VoxBrainEditor::VoxBrainEditor (VoxBrainProcessor& p)
     // (header + scope + pitch + report + chain + preset bar), so the window can
     // never be sized into the state where a region collapses.
     setResizeLimits (940, 740, 2600, 1800);
-    setSize (1180, 860);
+    setSize (baseWidth, baseHeight);
+    applyUiScale();               // restore the saved interface size
     startTimerHz (20);
 }
 
@@ -242,6 +243,12 @@ void VoxBrainEditor::showSetupMenu()
     m.addSectionHeader ("Appearance");
     m.addItem (4, "Colours...");
 
+    juce::PopupMenu scale;
+    for (int pct : { 75, 90, 100, 115, 130, 150, 175 })
+        scale.addItem (100 + pct, juce::String (pct) + "%", true,
+                       uiprefs::uiScalePercent == pct);
+    m.addSubMenu ("Interface size", scale);
+
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&setupButton),
                      [this] (int r)
     {
@@ -249,7 +256,32 @@ void VoxBrainEditor::showSetupMenu()
         else if (r == 2 && uiprefs::simpleMode) toggleSimpleMode();
         else if (r == 3) toggleHelp();
         else if (r == 4) toggleTheme();
+        else if (r > 100)
+        {
+            uiprefs::uiScalePercent = juce::jlimit (uiprefs::kMinScale,
+                                                    uiprefs::kMaxScale, r - 100);
+            uiprefs::save();
+            applyUiScale();
+        }
     });
+}
+
+// ---------------------------------------------------------------------------
+//  INTERFACE SCALE.
+//  The whole editor is drawn at its natural size and then transformed, so
+//  resized() never has to think about scaling — it lays out in unscaled
+//  coordinates and everything downstream (knobs, fonts, the chain strip)
+//  follows automatically. The window itself is resized to match so the host
+//  gives us exactly the room the scaled content needs.
+// ---------------------------------------------------------------------------
+void VoxBrainEditor::applyUiScale()
+{
+    const float k = juce::jlimit (uiprefs::kMinScale, uiprefs::kMaxScale,
+                                  uiprefs::uiScalePercent) * 0.01f;
+    setTransform (juce::AffineTransform::scale (k));
+    // setSize is in UNSCALED units; the transform does the rest. Keeping the
+    // base size fixed means switching scale never reflows the layout.
+    setSize (baseWidth, baseHeight);
 }
 
 // ============================================================================
@@ -427,6 +459,11 @@ void VoxBrainEditor::paint (juce::Graphics& g)
 
 void VoxBrainEditor::resized()
 {
+    // Remember the unscaled size the user has dragged to, so a later interface-
+    // size change scales THAT rather than snapping back to the shipped default.
+    baseWidth  = juce::jmax (940, getWidth());
+    baseHeight = juce::jmax (740, getHeight());
+
     auto area = getLocalBounds();
 
     auto header = area.removeFromTop (52).reduced (16, 8);

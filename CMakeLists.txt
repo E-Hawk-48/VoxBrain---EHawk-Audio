@@ -242,6 +242,8 @@ if(VB_BUILD_TESTS)
         Tests/Test_Smoothing.cpp
         Tests/Test_TuningAccuracy.cpp
         Tests/Test_ChainModules.cpp
+        Tests/Test_RackModules.cpp
+        Tests/Test_HostMatrix.cpp
 
         # The engine code under test. Deliberately compiled INTO the test binary
         # rather than linked from the plugin: these units are pure DSP with no
@@ -252,6 +254,14 @@ if(VB_BUILD_TESTS)
         Source/DSP/VoiceCharacter.cpp
         Source/DSP/VocalChain.cpp
         Source/Analysis/KeyDetector.cpp
+        Source/Modules/ModuleRegistry.cpp
+        Source/Modules/ModuleCatalog.cpp
+        Source/Modules/BuiltinModules.cpp
+        Source/Modules/DynamicsModules.cpp
+        Source/Modules/ToneModules.cpp
+        Source/Modules/ModulationModules.cpp
+        Source/Modules/SpaceModules.cpp
+        Source/Modules/AnalogModules.cpp
     )
 
     target_compile_definitions(VoxBrainTests PRIVATE

@@ -25,6 +25,15 @@ namespace uiprefs
     // user can silence them from the header if they find them noisy.
     inline bool tooltipsOn = true;
 
+    // INTERFACE SCALE, as a percentage. A plugin window has to be legible on a
+    // 4K laptop panel and on a 1080p monitor across the room, and the host
+    // decides neither for us — so the user gets the choice. Applied as a
+    // component transform, with the window resized to match, so the layout
+    // logic never has to know about it.
+    // 100 = native. Clamped to the range below wherever it is applied.
+    inline int  uiScalePercent = 100;
+    inline constexpr int kMinScale = 75, kMaxScale = 175;
+
     // Persistence -----------------------------------------------------------
     juce::File file();                                   // <userAppData>/VoxBrain/ui.xml
     std::unique_ptr<juce::XmlElement> toXml();
