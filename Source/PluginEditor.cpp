@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "Chat/ChatEngine.h"
 #include "Support/CrashLog.h"
+#include "UI/LayoutMath.h"
 #include <cmath>
 
 namespace vf
@@ -506,44 +507,26 @@ void VoxBrainEditor::resized()
     //  by weight makes the failure impossible: every region is always at least
     //  usable, and extra height goes where it helps most.
     // ------------------------------------------------------------------
-    struct Region { int minH; int weight; int h; };
-    Region scope   { 130, 3, 0 };   // spectrum + Vocal DNA radar
-    Region pitch   {  92, 1, 0 };   // live tuning display
-    Region report  { 112, 1, 0 };   // AI report + chat
-    Region chain   { 300, 4, 0 };   // the module chain (main working area)
+    //  Order below is scope / pitch / report / chain — see UI/LayoutMath.h for
+    //  why this is a shared, tested function rather than inline arithmetic.
     const int presetBarH = 36;
+    std::vector<layout::Region> regions {
+        { 130, 3, 0 },   // 0: spectrum + Vocal DNA radar
+        {  92, 1, 0 },   // 1: live tuning display
+        { 112, 1, 0 },   // 2: AI report + chat
+        { 300, 4, 0 },   // 3: the module chain (main working area)
+    };
+    layout::distribute (regions, area.getHeight() - presetBarH);
 
-    Region* regions[] = { &scope, &pitch, &report, &chain };
+    // Cap the chain so a very tall window grows the visualisations instead.
+    const int chainH  = juce::jmin (regions[3].height, 560);
+    const int reportH = regions[2].height;
+    const int pitchH  = regions[1].height;
 
-    int totalMin = presetBarH, totalWeight = 0;
-    for (auto* r : regions) { r->h = r->minH; totalMin += r->minH; totalWeight += r->weight; }
-
-    int spare = area.getHeight() - totalMin;
-    if (spare > 0 && totalWeight > 0)
-    {
-        int given = 0;
-        for (auto* r : regions)
-        {
-            const int add = spare * r->weight / totalWeight;
-            r->h += add;
-            given += add;
-        }
-        chain.h += spare - given;                       // rounding remainder
-    }
-    else if (spare < 0)
-    {
-        // Window shorter than the sum of the minimums (a host can force this).
-        // Shrink proportionally rather than letting the last region go negative.
-        const double k = (double) juce::jmax (1, area.getHeight() - presetBarH)
-                       / (double) juce::jmax (1, totalMin - presetBarH);
-        for (auto* r : regions) r->h = juce::jmax (24, (int) (r->h * k));
-    }
-
-    chain.h = juce::jmin (chain.h, 560);                // stop it eating a tall window
-    chainView.setBounds (area.removeFromBottom (chain.h));
-    analysisPanel.setBounds (area.removeFromBottom (report.h).reduced (0, 4));
+    chainView.setBounds (area.removeFromBottom (chainH));
+    analysisPanel.setBounds (area.removeFromBottom (reportH).reduced (0, 4));
     presetBar.setBounds (area.removeFromBottom (presetBarH));
-    pitchDisplay.setBounds (area.removeFromBottom (pitch.h).reduced (0, 4));
+    pitchDisplay.setBounds (area.removeFromBottom (pitchH).reduced (0, 4));
 
     // Top visual row: spectrum on the left, live Vocal DNA radar on the right.
     // The radar is dropped entirely on narrow windows rather than being crushed

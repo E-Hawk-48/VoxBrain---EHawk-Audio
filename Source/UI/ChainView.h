@@ -82,6 +82,23 @@ private:
     void layoutFlow();               // recompute the signal-flow box rects
     int  flowBoxAt (juce::Point<int> p) const;
 
+    // ---- chain-strip row metrics ---------------------------------------
+    //  Row height used to be `listArea.getHeight() / rows.size()` recomputed
+    //  inline in five places, with no floor. A full chain — eleven fixed stages
+    //  plus whatever LEARN adds to the rack — drove that to around eighteen
+    //  pixels, at which point the subtitle is suppressed and the name is
+    //  clipped: the plugin's main navigation became unreadable exactly when the
+    //  user had built something worth navigating. Rows now have a readable
+    //  minimum and the strip scrolls when they no longer fit, and the metric
+    //  lives in one place so the paint, hit-test and drag paths cannot disagree.
+    static constexpr int kMinRowHeight = 30;
+    int  rowHeight() const;
+    int  maxRowScroll() const;
+    void clampRowScroll();
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    int rowScroll = 0;               // pixels scrolled off the top of the strip
+
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp   (const juce::MouseEvent&) override;

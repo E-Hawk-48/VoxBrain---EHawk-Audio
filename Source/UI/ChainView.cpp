@@ -1,4 +1,5 @@
 #include "ChainView.h"
+#include "LayoutMath.h"
 #include "../Modules/ModuleRegistry.h"
 #include "../ParameterIDs.h"
 #include <cmath>
@@ -263,6 +264,17 @@ void ChainView::selectIndex (int index)
 {
     if (index < 0 || index >= (int) rows.size() || index == selected) return;
     selected = index;
+
+    // Bring the selection into view. Selection can come from the signal-flow
+    // ribbon as well as from the strip, so the row being selected is not
+    // necessarily one the user can currently see.
+    const int rowH = rowHeight();
+    const int top = index * rowH, bottom = top + rowH;
+    if (top < rowScroll)                        rowScroll = top;
+    else if (bottom > rowScroll + listArea.getHeight())
+        rowScroll = bottom - listArea.getHeight();
+    clampRowScroll();
+
     buildFocusPanel();
     resized();
     repaint();
@@ -428,12 +440,38 @@ int ChainView::flowBoxAt (juce::Point<int> p) const
     return -1;
 }
 
+// ---- chain-strip row metrics (one definition, used everywhere) -------------
+int ChainView::rowHeight() const
+{
+    // Fill the strip when the chain is short; stop shrinking at a readable
+    // minimum and let the strip scroll once it is long.
+    return layout::rowHeightFor (listArea.getHeight(), (int) rows.size(), kMinRowHeight);
+}
+
+int ChainView::maxRowScroll() const
+{
+    return layout::maxScrollFor (listArea.getHeight(), (int) rows.size(), rowHeight());
+}
+
+void ChainView::clampRowScroll()
+{
+    rowScroll = juce::jlimit (0, maxRowScroll(), rowScroll);
+}
+
+void ChainView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    if (maxRowScroll() <= 0 || ! listArea.contains (e.getPosition())) return;
+    rowScroll = juce::jlimit (0, maxRowScroll(),
+                              rowScroll - juce::roundToInt (w.deltaY * (float) rowHeight() * 3.0f));
+    repaint();
+}
+
 // ---- mouse: select, power, drag-reorder -----------------------------------
 int ChainView::rowAtPosition (juce::Point<int> p) const
 {
     if (rows.empty() || ! listArea.contains (p)) return -1;
-    const int rowH = juce::jmax (1, listArea.getHeight() / (int) rows.size());
-    return juce::jlimit (0, (int) rows.size() - 1, (p.y - listArea.getY()) / rowH);
+    return juce::jlimit (0, (int) rows.size() - 1,
+                         (p.y - listArea.getY() + rowScroll) / rowHeight());
 }
 
 void ChainView::mouseMove (const juce::MouseEvent& e)
@@ -456,8 +494,8 @@ void ChainView::mouseDown (const juce::MouseEvent& e)
     if (idx < 0) return;
 
     // The power dot lives at the left of each row.
-    const int rowH = juce::jmax (1, listArea.getHeight() / (int) rows.size());
-    const int rowY = listArea.getY() + idx * rowH;
+    const int rowH = rowHeight();
+    const int rowY = listArea.getY() + idx * rowH - rowScroll;
     const juce::Rectangle<int> powerHit (listArea.getX() + 6, rowY + rowH / 2 - 11, 22, 22);
     if (powerHit.contains (e.getPosition())) { togglePowerAt (idx); return; }
 
@@ -475,9 +513,18 @@ void ChainView::mouseDrag (const juce::MouseEvent& e)
     dragging = true;
     setMouseCursor (juce::MouseCursor::DraggingHandCursor);
 
-    const int rowH = juce::jmax (1, listArea.getHeight() / (int) juce::jmax (1, (int) rows.size()));
-    const int rel  = e.getPosition().y - listArea.getY();
+    const int rowH = rowHeight();
+    const int rel  = e.getPosition().y - listArea.getY() + rowScroll;
     dragTo = juce::jlimit (0, (int) rows.size() - 1, rel / juce::jmax (1, rowH));
+
+    // Auto-scroll when a drag reaches the top or bottom edge, so a module can be
+    // dragged to a position that is currently off-screen.
+    if (maxRowScroll() > 0)
+    {
+        const int y = e.getPosition().y;
+        if (y < listArea.getY() + rowH)          rowScroll = juce::jmax (0, rowScroll - 8);
+        else if (y > listArea.getBottom() - rowH) rowScroll = juce::jmin (maxRowScroll(), rowScroll + 8);
+    }
     repaint();
 }
 
@@ -511,6 +558,7 @@ void ChainView::resized()
 
     listArea = stripArea.reduced (8, 8);
     listArea.removeFromTop (22);          // "MODULE CHAIN" heading
+    clampRowScroll();
 
     // The signal-flow ribbon sits at the top of the focus area; the selected
     // module's controls fill the rest below it.
@@ -558,11 +606,17 @@ void ChainView::paint (juce::Graphics& g)
 
     if (! rows.empty())
     {
-        const int rowH = juce::jmax (1, listArea.getHeight() / (int) rows.size());
+        const int rowH = rowHeight();
+        juce::Graphics::ScopedSaveState clipToStrip (g);
+        g.reduceClipRegion (listArea);          // rows scroll under the heading
+
         for (int i = 0; i < (int) rows.size(); ++i)
         {
             const auto& r = rows[(size_t) i];
-            juce::Rectangle<int> rb (listArea.getX(), listArea.getY() + i * rowH, listArea.getWidth(), rowH);
+            juce::Rectangle<int> rb (listArea.getX(), listArea.getY() + i * rowH - rowScroll,
+                                     listArea.getWidth(), rowH);
+            if (rb.getBottom() < listArea.getY() || rb.getY() > listArea.getBottom())
+                continue;                        // off-screen: nothing to draw
             const bool isSel = (i == selected);
             const bool active = isRowActive (r);
 
@@ -613,10 +667,24 @@ void ChainView::paint (juce::Graphics& g)
         // drag insertion line
         if (dragging && dragTo >= 0)
         {
-            const int y = listArea.getY() + dragTo * rowH;
+            const int y = listArea.getY() + dragTo * rowH - rowScroll;
             g.setColour (theme::accentWarm);
             g.fillRect (listArea.getX() + 4, y - 1, listArea.getWidth() - 8, 2);
         }
+    }
+
+    // Scroll indicator — without it a chain that continues below the fold looks
+    // like a chain that simply ends there.
+    if (maxRowScroll() > 0)
+    {
+        const float track = (float) listArea.getHeight();
+        const float frac  = track / (float) (rows.size() * rowHeight());
+        const float thumbH = juce::jmax (24.0f, track * frac);
+        const float t = (float) rowScroll / (float) maxRowScroll();
+        g.setColour (theme::accent.withAlpha (0.45f));
+        g.fillRoundedRectangle ((float) listArea.getRight() - 4.0f,
+                                (float) listArea.getY() + t * (track - thumbH),
+                                3.0f, thumbH, 1.5f);
     }
 
     // ---- focused module panel backdrop ----

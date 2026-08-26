@@ -244,6 +244,7 @@ if(VB_BUILD_TESTS)
         Tests/Test_ChainModules.cpp
         Tests/Test_RackModules.cpp
         Tests/Test_HostMatrix.cpp
+        Tests/Test_Layout.cpp
 
         # The engine code under test. Deliberately compiled INTO the test binary
         # rather than linked from the plugin: these units are pure DSP with no
