@@ -40,11 +40,16 @@ WizardStyle=modern
 [Files]
 ; VST3 bundle — the build already copies onnxruntime.dll + VoxBrainModels
 ; inside the .vst3, so recursing the folder captures everything it needs.
-Source: "{#Artefacts}\VST3\VoxBrain.vst3\*"; DestDir: "{commoncf64}\VST3\VoxBrain.vst3"; \
+Source: "{#Artefacts}\VST3\VoxBrain.vst3\*"; DestDir: "{commoncf64}\VST3\VoxBrain.vst3"; Excludes: "*.pdb"; \
     Flags: recursesubdirs createallsubdirs ignoreversion
 
 ; Standalone app + its runtime files (onnxruntime.dll, VoxBrainModels).
-Source: "{#Artefacts}\Standalone\*"; DestDir: "{app}"; \
+; PDBs are excluded deliberately. The Release build emits debug symbols (see
+; the /DEBUG block in CMakeLists, which exists so a field crash report names
+; the function instead of a bare address), and VoxBrain.pdb alone is ~73 MB -
+; it would nearly quadruple a 28 MB installer while being of no use on a
+; user machine. The symbols stay in the build folder for reading crash.log.
+Source: "{#Artefacts}\Standalone\*"; DestDir: "{app}"; Excludes: "*.pdb"; \
     Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
