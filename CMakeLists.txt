@@ -145,7 +145,7 @@ target_compile_definitions(VoxBrain PUBLIC
     #  NOTE: the repo is still named Custom-Vocal-Plugin on GitHub — this URL
     #  matches the real repo. If you rename the repo to VoxBrain, update it here.
     VOXBRAIN_VERSION="${PROJECT_VERSION}"
-    VOXBRAIN_UPDATE_URL="https://api.github.com/repos/E-Hawk-48/Custom-Vocal-Plugin/releases/latest"
+    VOXBRAIN_UPDATE_URL="https://api.github.com/repos/E-Hawk-48/VoxBrain---EHawk-Audio/releases/latest"
 )
 
 target_link_libraries(VoxBrain
